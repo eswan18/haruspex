@@ -42,6 +42,29 @@ export type User = Selectable<UsersTable>;
 export type NewUser = Insertable<UsersTable>;
 export type UserUpdate = Updateable<UsersTable>;
 
+/**
+ * The columns of a user that may be shown to a DIFFERENT user.
+ *
+ * Everything else on `users` is either personal data (`email`), an identifier
+ * that follows the person across the whole fleet (`idp_user_id`), or a fact
+ * about their privileges (`is_admin`, `deactivated_at`). Those belong to that
+ * user's own session, or to an admin, and nowhere else.
+ *
+ * This boundary is not enforced by the database, and deliberately so. Column
+ * privileges cannot express it, because the app connects as a single role
+ * (`app_user`) for admins and members alike, and RLS is row-level where this
+ * problem is column-level. A narrower view would not help either: the session
+ * user legitimately reads its own full row, and `lib/get-user.ts` reads it
+ * before any session exists to test a policy against.
+ *
+ * So it is a type, and its value is that widening it has to be deliberate.
+ * Prefer it over hand-written inline shapes when returning other people's rows.
+ */
+export type PublicUser = Pick<
+  User,
+  "id" | "name" | "username" | "picture_url"
+>;
+
 export interface CategoriesTable {
   id: Generated<number>;
   name: string;

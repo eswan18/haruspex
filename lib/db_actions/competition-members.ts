@@ -3,6 +3,7 @@
 import { withRLS, withRLSAction } from "@/lib/db-helpers";
 import {
   CompetitionMember,
+  PublicUser,
   VCompetitionMember,
 } from "@/types/db_types";
 import { getUserFromCookies } from "../get-user";
@@ -394,9 +395,7 @@ export async function getMemberCount(
  */
 export async function getEligibleMembers(
   competitionId: number,
-): Promise<
-  ServerActionResult<{ id: number; name: string; username: string | null }[]>
-> {
+): Promise<ServerActionResult<Pick<PublicUser, "id" | "name" | "username">[]>> {
   const currentUser = await getUserFromCookies();
   logger.debug("Getting eligible members", {
     competitionId,
