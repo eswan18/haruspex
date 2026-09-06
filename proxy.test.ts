@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { NextRequest } from "next/server";
+import { RefreshTokenRejectedError } from "@/lib/idp/errors";
 
 const { mockRefreshAccessToken } = vi.hoisted(() => ({
   mockRefreshAccessToken: vi.fn(),
@@ -151,7 +152,9 @@ describe("proxy: protected routes with expired token", () => {
     expect(req.cookies.get("token")?.value).toBe("new-access");
   });
 
-  it("treats an empty access_token in the refresh response as failure", async () => {
+  it("keeps the session when the refresh response is malformed", async () => {
+    // A 200 with no access_token is a bug at the IdP, not proof that this
+    // user's grant is gone -- so the session survives to retry.
     mockRefreshAccessToken.mockResolvedValue({
       access_token: "",
       token_type: "Bearer",
@@ -166,9 +169,9 @@ describe("proxy: protected routes with expired token", () => {
       ),
     );
 
-    expect(res.status).toBe(307);
-    expect(res.cookies.get("token")?.value).toBe("");
-    expect(res.cookies.get("token")?.maxAge).toBe(0);
+    expect(res.status).toBe(200);
+    expect(res.cookies.get("token")).toBeUndefined();
+    expect(res.cookies.get("refresh_token")).toBeUndefined();
   });
 
   it("updates both cookies when refresh response rotates the refresh_token", async () => {
@@ -194,8 +197,10 @@ describe("proxy: protected routes with expired token", () => {
     expect(refreshCookie?.maxAge).toBe(30 * 24 * 60 * 60);
   });
 
-  it("redirects to /login and clears the token when refresh fails", async () => {
-    mockRefreshAccessToken.mockRejectedValue(new Error("refresh failed"));
+  it("redirects to /login and clears both cookies when the IdP rejects the grant", async () => {
+    mockRefreshAccessToken.mockRejectedValue(
+      new RefreshTokenRejectedError("Refresh token rejected: invalid_grant"),
+    );
 
     const { proxy } = await import("./proxy");
   const res = await proxy(
@@ -216,5 +221,48 @@ describe("proxy: protected routes with expired token", () => {
     const refreshCookie = res.cookies.get("refresh_token");
     expect(refreshCookie?.value).toBe("");
     expect(refreshCookie?.maxAge).toBe(0);
+  });
+});
+
+describe("proxy: a refresh failure that is not the IdP rejecting the grant", () => {
+  // Before this, ANY thrown error cleared both cookies. A single 502 from the
+  // IdP therefore logged out every signed-in user at once, and each of them
+  // had to log in again even though their refresh token was still perfectly
+  // good. Only `invalid_grant` is evidence that a session is over.
+
+  it.each([
+    ["the IdP is down", new Error("Failed to refresh token: 503 unavailable")],
+    ["the request times out", new Error("fetch failed")],
+    ["something throws a non-Error", "boom"],
+  ])("keeps both cookies when %s", async (_label, thrown) => {
+    mockRefreshAccessToken.mockRejectedValue(thrown);
+
+    const { proxy } = await import("./proxy");
+    const res = await proxy(
+      makeRequest(
+        "/forecasts",
+        `token=${EXPIRED_JWT}; refresh_token=refresh-xyz`,
+      ),
+    );
+
+    // Passed through, not bounced to /login...
+    expect(res.status).toBe(200);
+    expect(res.headers.get("location")).toBeNull();
+    // ...and crucially, neither cookie was cleared, so the next request
+    // retries with the same still-valid refresh token.
+    expect(res.cookies.get("token")).toBeUndefined();
+    expect(res.cookies.get("refresh_token")).toBeUndefined();
+  });
+
+  it("still lets the landing page render for a visitor", async () => {
+    mockRefreshAccessToken.mockRejectedValue(new Error("IdP unreachable"));
+
+    const { proxy } = await import("./proxy");
+    const res = await proxy(
+      makeRequest("/", `token=${EXPIRED_JWT}; refresh_token=refresh-xyz`),
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.cookies.get("refresh_token")).toBeUndefined();
   });
 });

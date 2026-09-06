@@ -110,4 +110,71 @@ describe("IDP Client", () => {
       expect(result).toBe("John Doe");
     });
   });
+  describe("refreshAccessToken", () => {
+    // The distinction this suite pins down is the whole point: the caller
+    // ends the user's session for RefreshTokenRejectedError and for nothing
+    // else, so anything mis-classified here logs people out on an IdP blip.
+    function respondWith(status: number, body: string) {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: status >= 200 && status < 300,
+          status,
+          text: async () => body,
+          json: async () => JSON.parse(body),
+        }),
+      );
+    }
+
+    it("throws RefreshTokenRejectedError when the IdP says invalid_grant", async () => {
+      respondWith(
+        400,
+        JSON.stringify({
+          error: "invalid_grant",
+          error_description: "Invalid refresh token",
+        }),
+      );
+      const { refreshAccessToken } = await import("./client");
+      const { RefreshTokenRejectedError } = await import("./errors");
+
+      await expect(refreshAccessToken("dead-token")).rejects.toBeInstanceOf(
+        RefreshTokenRejectedError,
+      );
+    });
+
+    it.each([
+      ["a 503 with an HTML body", 503, "<html>502 Bad Gateway</html>"],
+      ["a 500 with an empty body", 500, ""],
+      [
+        "a 400 that is some other OAuth error",
+        400,
+        JSON.stringify({ error: "invalid_client" }),
+      ],
+      ["a 429 from a rate limiter", 429, "Rate limit exceeded."],
+    ])("does not report %s as a rejected grant", async (_l, status, body) => {
+      respondWith(status, body);
+      const { refreshAccessToken } = await import("./client");
+      const { RefreshTokenRejectedError } = await import("./errors");
+
+      const err = await refreshAccessToken("good-token").catch((e) => e);
+      expect(err).toBeInstanceOf(Error);
+      expect(err).not.toBeInstanceOf(RefreshTokenRejectedError);
+    });
+
+    it("returns the token response on success", async () => {
+      respondWith(
+        200,
+        JSON.stringify({
+          access_token: "a",
+          token_type: "Bearer",
+          expires_in: 3600,
+        }),
+      );
+      const { refreshAccessToken } = await import("./client");
+
+      await expect(refreshAccessToken("good-token")).resolves.toMatchObject({
+        access_token: "a",
+      });
+    });
+  });
 });

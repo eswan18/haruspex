@@ -1,6 +1,8 @@
 import "server-only";
 import * as jose from "jose";
 
+import { RefreshTokenRejectedError } from "./errors";
+
 function requiredEnv(name: string): string {
   const value = process.env[name];
   if (!value) throw new Error(`Missing required environment variable: ${name}`);
@@ -99,7 +101,29 @@ export async function exchangeCodeForTokens(
 }
 
 /**
+ * True when an OAuth2 error response body is specifically `invalid_grant`
+ * (RFC 6749 §5.2) -- the IdP telling us this refresh token is dead.
+ *
+ * A body we cannot parse is deliberately NOT treated as `invalid_grant`. An
+ * unreadable response is a broken IdP or something in front of it, which is no
+ * evidence at all about the user's session.
+ */
+function isInvalidGrant(body: string): boolean {
+  try {
+    return JSON.parse(body)?.error === "invalid_grant";
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Refresh an access token using a refresh token.
+ *
+ * Throws {@link RefreshTokenRejectedError} only when the IdP says the grant
+ * itself is gone. Every other failure -- a 5xx, a timeout, a gateway error --
+ * throws a plain Error, because the caller must be able to tell "this session
+ * is over" apart from "the IdP is briefly unwell" and must not end a session
+ * over the latter.
  */
 export async function refreshAccessToken(
   refreshToken: string,
@@ -119,6 +143,9 @@ export async function refreshAccessToken(
 
   if (!response.ok) {
     const error = await response.text();
+    if (isInvalidGrant(error)) {
+      throw new RefreshTokenRejectedError(`Refresh token rejected: ${error}`);
+    }
     throw new Error(`Failed to refresh token: ${error}`);
   }
 

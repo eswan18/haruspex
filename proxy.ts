@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { refreshAccessToken } from "@/lib/idp/client";
 import { isTokenNearExpiry } from "@/lib/auth/token-refresh";
+import { RefreshTokenRejectedError } from "@/lib/idp/errors";
 import { logger } from "@/lib/logger";
 
 /**
@@ -105,13 +106,26 @@ export async function proxy(request: NextRequest) {
     }
     return response;
   } catch (err) {
-    // Refresh failed (stale refresh token, IDP down, etc.). Log so we can
-    // distinguish normal expirations from IDP outages, clear both auth
-    // cookies (leaving the stale refresh token would cause every subsequent
-    // navigation to re-trigger the same failing refresh), and redirect.
-    logger.warn("Token refresh failed, clearing session", {
+    // Only the IdP answering `invalid_grant` means this session is genuinely
+    // over. Every other failure -- the IdP down, a timeout, a bad gateway, a
+    // malformed body -- is evidence about the IdP, not about the user, and
+    // ending the session over one turns a blip into a simultaneous forced
+    // logout for everyone signed in.
+    if (!(err instanceof RefreshTokenRejectedError)) {
+      logger.warn("Token refresh failed; keeping the session", {
+        operation: "proxy.refreshAccessToken",
+        error: err instanceof Error ? err.message : String(err),
+      });
+      // The refresh runs a full REFRESH_BUFFER_SEC ahead of expiry, so the
+      // access token the browser sent is usually still valid and the user
+      // notices nothing. If it has expired, this one request renders
+      // signed-out -- but both cookies survive, so the next request retries.
+      return NextResponse.next();
+    }
+
+    logger.info("Refresh token rejected by the IdP, clearing session", {
       operation: "proxy.refreshAccessToken",
-      error: err instanceof Error ? err.message : String(err),
+      error: err.message,
     });
     const response = servesAnonymous(pathname)
       ? NextResponse.next()
