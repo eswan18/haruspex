@@ -19,6 +19,16 @@ const PUBLIC_ROUTES = [
 const REFRESH_BUFFER_SEC = 60;
 const REFRESH_TOKEN_MAX_AGE = 30 * 24 * 60 * 60; // 30 days
 
+// How long to stop retrying after a refresh fails for a reason that is about
+// the IdP rather than the session. Keeping the session alive (rightly) removed
+// the thing that used to stop those retries -- the logout -- so this replaces
+// it. identity rate-limits 20 requests/min against the *pod* IP that every
+// server-to-server call shares, and that one bucket also carries JWKS fetches
+// and the login code exchange; unbounded retries would starve both and sign
+// people out by a longer road.
+const BACKOFF_COOKIE = "refresh_backoff";
+const BACKOFF_SEC = 30;
+
 const sharedCookieOpts = {
   httpOnly: true,
   secure: process.env.NODE_ENV === "production",
@@ -41,6 +51,27 @@ function isPublicRoute(pathname: string): boolean {
  */
 function servesAnonymous(pathname: string): boolean {
   return pathname === "/";
+}
+
+/**
+ * How to answer when the refresh could not be completed for a reason that says
+ * nothing about the session. Both auth cookies are left untouched either way --
+ * the refresh token is still good, and the session has to survive to retry.
+ */
+function keepSession(request: NextRequest, pathname: string, token: string) {
+  // Refresh runs a full REFRESH_BUFFER_SEC ahead of expiry, so the access
+  // token the browser sent is usually still valid. Downstream verifies it and
+  // the user sees nothing at all.
+  if (!isTokenNearExpiry(token, Date.now(), 0)) {
+    return NextResponse.next();
+  }
+  // Genuinely expired: downstream would resolve no user. Several routes then
+  // dereference it (app/competitions/[competitionId]/access.ts), so passing
+  // through here renders a crash page rather than a signed-out one. Send them
+  // to /login instead -- but WITHOUT clearing the cookies, which is the whole
+  // point: the session recovers by itself once the IdP does.
+  if (servesAnonymous(pathname)) return NextResponse.next();
+  return redirectToLogin(request, pathname);
 }
 
 function redirectToLogin(request: NextRequest, pathname: string) {
@@ -82,6 +113,11 @@ export async function proxy(request: NextRequest) {
     return redirectToLogin(request, pathname);
   }
 
+  // A recent transient failure means the IdP is unwell; don't pile on.
+  if (request.cookies.get(BACKOFF_COOKIE)) {
+    return keepSession(request, pathname, token);
+  }
+
   // Try to refresh the access token using the refresh token.
   try {
     const tokens = await refreshAccessToken(refreshToken);
@@ -116,11 +152,12 @@ export async function proxy(request: NextRequest) {
         operation: "proxy.refreshAccessToken",
         error: err instanceof Error ? err.message : String(err),
       });
-      // The refresh runs a full REFRESH_BUFFER_SEC ahead of expiry, so the
-      // access token the browser sent is usually still valid and the user
-      // notices nothing. If it has expired, this one request renders
-      // signed-out -- but both cookies survive, so the next request retries.
-      return NextResponse.next();
+      const response = keepSession(request, pathname, token);
+      response.cookies.set(BACKOFF_COOKIE, "1", {
+        ...sharedCookieOpts,
+        maxAge: BACKOFF_SEC,
+      });
+      return response;
     }
 
     logger.info("Refresh token rejected by the IdP, clearing session", {
@@ -135,6 +172,7 @@ export async function proxy(request: NextRequest) {
       ...sharedCookieOpts,
       maxAge: 0,
     });
+    response.cookies.set(BACKOFF_COOKIE, "", { ...sharedCookieOpts, maxAge: 0 });
     return response;
   }
 }

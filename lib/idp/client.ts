@@ -100,17 +100,42 @@ export async function exchangeCodeForTokens(
   return response.json();
 }
 
+/** How long to wait on the IdP before giving up on a refresh. */
+const REFRESH_TIMEOUT_MS = 3000;
+
 /**
- * True when an OAuth2 error response body is specifically `invalid_grant`
- * (RFC 6749 §5.2) -- the IdP telling us this refresh token is dead.
- *
- * A body we cannot parse is deliberately NOT treated as `invalid_grant`. An
- * unreadable response is a broken IdP or something in front of it, which is no
- * evidence at all about the user's session.
+ * The OAuth2 error codes that do not mean "this grant is finished"
+ * (RFC 6749 §5.2).
  */
-function isInvalidGrant(body: string): boolean {
+const RETRYABLE_OAUTH_ERRORS = new Set([
+  "server_error",
+  "temporarily_unavailable",
+  // Not retryable so much as not the user's problem: `invalid_client` means
+  // OUR client id or secret is wrong. Ending everyone's session would not fix
+  // the config, and they could not sign back in anyway -- so keep the grant,
+  // which is still good the moment the credentials are corrected.
+  "invalid_client",
+]);
+
+/**
+ * True when an error response is the IdP deliberately refusing this grant.
+ *
+ * The test is inverted on purpose. Enumerating the terminal codes instead --
+ * asking "is it `invalid_grant`?" -- decays every time identity grows a code:
+ * `invalid_scope` (a refresh token carrying admin scopes, oauth.go) is already
+ * such a case, and it explicitly does NOT consume the token, so treating it as
+ * retryable pins that user in a loop they cannot leave without clearing
+ * cookies by hand. A structured OAuth error body is the IdP having reached a
+ * decision, and every decision but the two retryable codes is permanent for
+ * this token.
+ *
+ * A body we cannot parse is NOT terminal: an unreadable response means the IdP
+ * or something in front of it is broken, which is the opposite of a decision.
+ */
+function isTerminalGrantError(body: string): boolean {
   try {
-    return JSON.parse(body)?.error === "invalid_grant";
+    const code = JSON.parse(body)?.error;
+    return typeof code === "string" && !RETRYABLE_OAUTH_ERRORS.has(code);
   } catch {
     return false;
   }
@@ -119,11 +144,11 @@ function isInvalidGrant(body: string): boolean {
 /**
  * Refresh an access token using a refresh token.
  *
- * Throws {@link RefreshTokenRejectedError} only when the IdP says the grant
- * itself is gone. Every other failure -- a 5xx, a timeout, a gateway error --
- * throws a plain Error, because the caller must be able to tell "this session
- * is over" apart from "the IdP is briefly unwell" and must not end a session
- * over the latter.
+ * Throws {@link RefreshTokenRejectedError} only when the IdP has decided the
+ * grant is finished. Every other failure -- a 5xx, a timeout, a gateway error,
+ * a 429 -- throws a plain Error, because the caller must be able to tell "this
+ * session is over" apart from "the IdP is briefly unwell" and must not end a
+ * session over the latter.
  */
 export async function refreshAccessToken(
   refreshToken: string,
@@ -139,11 +164,12 @@ export async function refreshAccessToken(
       client_id: IDP_CLIENT_ID,
       client_secret: IDP_CLIENT_SECRET,
     }),
+    signal: AbortSignal.timeout(REFRESH_TIMEOUT_MS),
   });
 
   if (!response.ok) {
     const error = await response.text();
-    if (isInvalidGrant(error)) {
+    if (isTerminalGrantError(error)) {
       throw new RefreshTokenRejectedError(`Refresh token rejected: ${error}`);
     }
     throw new Error(`Failed to refresh token: ${error}`);

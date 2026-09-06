@@ -30,6 +30,16 @@ const EXPIRED_JWT = (() => {
   return `${header}.${body}.sig`;
 })();
 
+const NEAR_EXPIRY_JWT = (() => {
+  const header = Buffer.from(
+    JSON.stringify({ alg: "HS256", typ: "JWT" }),
+  ).toString("base64url");
+  const body = Buffer.from(
+    JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 30 }),
+  ).toString("base64url");
+  return `${header}.${body}.sig`;
+})();
+
 function makeRequest(path: string, cookieHeader = ""): NextRequest {
   return new NextRequest(`http://localhost${path}`, {
     headers: cookieHeader ? { cookie: cookieHeader } : {},
@@ -169,7 +179,9 @@ describe("proxy: protected routes with expired token", () => {
       ),
     );
 
-    expect(res.status).toBe(200);
+    // Expired token, so it redirects rather than rendering a userless page --
+    // but neither auth cookie is cleared.
+    expect(res.status).toBe(307);
     expect(res.cookies.get("token")).toBeUndefined();
     expect(res.cookies.get("refresh_token")).toBeUndefined();
   });
@@ -227,31 +239,107 @@ describe("proxy: protected routes with expired token", () => {
 describe("proxy: a refresh failure that is not the IdP rejecting the grant", () => {
   // Before this, ANY thrown error cleared both cookies. A single 502 from the
   // IdP therefore logged out every signed-in user at once, and each of them
-  // had to log in again even though their refresh token was still perfectly
-  // good. Only `invalid_grant` is evidence that a session is over.
+  // had to sign in again despite holding a perfectly good refresh token. Only
+  // a deliberate refusal from the IdP is evidence that a session is over.
 
-  it.each([
+  const transient = [
     ["the IdP is down", new Error("Failed to refresh token: 503 unavailable")],
     ["the request times out", new Error("fetch failed")],
     ["something throws a non-Error", "boom"],
-  ])("keeps both cookies when %s", async (_label, thrown) => {
-    mockRefreshAccessToken.mockRejectedValue(thrown);
+  ] as const;
+
+  it.each(transient)(
+    "keeps both cookies and passes through when %s and the token is still valid",
+    async (_label, thrown) => {
+      mockRefreshAccessToken.mockRejectedValue(thrown);
+
+      const { proxy } = await import("./proxy");
+      const res = await proxy(
+        makeRequest(
+          "/forecasts",
+          `token=${NEAR_EXPIRY_JWT}; refresh_token=refresh-xyz`,
+        ),
+      );
+
+      // Inside the refresh buffer the token still verifies downstream, so the
+      // user notices nothing at all.
+      expect(res.status).toBe(200);
+      expect(res.headers.get("location")).toBeNull();
+      expect(res.cookies.get("token")).toBeUndefined();
+      expect(res.cookies.get("refresh_token")).toBeUndefined();
+    },
+  );
+
+  it.each(transient)(
+    "redirects WITHOUT clearing cookies when %s and the token has expired",
+    async (_label, thrown) => {
+      mockRefreshAccessToken.mockRejectedValue(thrown);
+
+      const { proxy } = await import("./proxy");
+      const res = await proxy(
+        makeRequest(
+          "/forecasts",
+          `token=${EXPIRED_JWT}; refresh_token=refresh-xyz`,
+        ),
+      );
+
+      // Passing through with a truly expired token resolves no user, and
+      // routes like app/competitions/[competitionId]/access.ts dereference it
+      // -- so this must redirect rather than render a crash page.
+      expect(res.status).toBe(307);
+      expect(res.headers.get("location")).toContain("/login");
+      // The point of the whole change: the session is NOT destroyed, so it
+      // recovers by itself once the IdP does.
+      expect(res.cookies.get("token")).toBeUndefined();
+      expect(res.cookies.get("refresh_token")).toBeUndefined();
+    },
+  );
+
+  it("sets a short backoff cookie so the retries do not pile up", async () => {
+    mockRefreshAccessToken.mockRejectedValue(new Error("IdP unreachable"));
 
     const { proxy } = await import("./proxy");
     const res = await proxy(
       makeRequest(
         "/forecasts",
-        `token=${EXPIRED_JWT}; refresh_token=refresh-xyz`,
+        `token=${NEAR_EXPIRY_JWT}; refresh_token=refresh-xyz`,
       ),
     );
 
-    // Passed through, not bounced to /login...
+    const backoff = res.cookies.get("refresh_backoff");
+    expect(backoff?.value).toBe("1");
+    expect(backoff?.maxAge).toBe(30);
+    expect(backoff?.httpOnly).toBe(true);
+  });
+
+  it("does not call the IdP again while the backoff cookie is set", async () => {
+    const { proxy } = await import("./proxy");
+    const res = await proxy(
+      makeRequest(
+        "/forecasts",
+        `token=${NEAR_EXPIRY_JWT}; refresh_token=refresh-xyz; refresh_backoff=1`,
+      ),
+    );
+
+    // identity rate-limits 20 req/min on an IP every server-to-server call
+    // shares, and that bucket also carries JWKS and the login code exchange.
+    expect(mockRefreshAccessToken).not.toHaveBeenCalled();
     expect(res.status).toBe(200);
-    expect(res.headers.get("location")).toBeNull();
-    // ...and crucially, neither cookie was cleared, so the next request
-    // retries with the same still-valid refresh token.
-    expect(res.cookies.get("token")).toBeUndefined();
     expect(res.cookies.get("refresh_token")).toBeUndefined();
+  });
+
+  it("does not extend its own backoff while skipping", async () => {
+    const { proxy } = await import("./proxy");
+    const res = await proxy(
+      makeRequest(
+        "/forecasts",
+        `token=${NEAR_EXPIRY_JWT}; refresh_token=refresh-xyz; refresh_backoff=1`,
+      ),
+    );
+
+    // Re-setting it on every skipped request would hold the backoff open for
+    // as long as the user keeps browsing, long after the IdP recovered.
+    expect(res.cookies.get("refresh_backoff")).toBeUndefined();
   });
 
   it("still lets the landing page render for a visitor", async () => {

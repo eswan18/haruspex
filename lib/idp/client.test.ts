@@ -142,22 +142,56 @@ describe("IDP Client", () => {
       );
     });
 
+    // Every row below is a response identity's token endpoint can actually
+    // return for a refresh_token grant (pkg/httpserver/oauth.go), rather than
+    // a shape invented here -- this is the seam where a wrong call logs a real
+    // user out, or strands one in a loop they cannot escape.
     it.each([
-      ["a 503 with an HTML body", 503, "<html>502 Bad Gateway</html>"],
-      ["a 500 with an empty body", 500, ""],
-      [
-        "a 400 that is some other OAuth error",
-        400,
-        JSON.stringify({ error: "invalid_client" }),
-      ],
-      ["a 429 from a rate limiter", 429, "Rate limit exceeded."],
-    ])("does not report %s as a rejected grant", async (_l, status, body) => {
+      ["token row missing or already revoked", 400, "invalid_grant"],
+      ["refresh token older than 30 days", 400, "invalid_grant"],
+      ["token issued to a different client", 400, "invalid_grant"],
+      ["user deactivated in the IdP", 400, "invalid_grant"],
+      // Refuses the grant WITHOUT consuming the token, so it repeats forever:
+      // classifying it as retryable pins that user in an inescapable loop.
+      ["legacy token carrying admin scopes", 400, "invalid_scope"],
+      ["refresh_token field missing", 400, "invalid_request"],
+    ])("ends the session for %s", async (_l, status, code) => {
+      respondWith(status, JSON.stringify({ error: code }));
+      const { refreshAccessToken } = await import("./client");
+      const { RefreshTokenRejectedError } = await import("./errors");
+
+      const err = await refreshAccessToken("t").catch((e) => e);
+      expect(err).toBeInstanceOf(RefreshTokenRejectedError);
+    });
+
+    it.each([
+      ["a DB error inside the IdP", 400, JSON.stringify({ error: "server_error" })],
+      ["our own client credentials being wrong", 401, JSON.stringify({ error: "invalid_client" })],
+      ["the rate limiter (plain text, not JSON)", 429, "Rate limit exceeded. Please try again later."],
+      ["a chi Recoverer panic with an empty body", 500, ""],
+      ["a gateway HTML error page", 502, "<html>502 Bad Gateway</html>"],
+      ["a chi Timeout with an empty body", 504, ""],
+    ])("keeps the session for %s", async (_l, status, body) => {
       respondWith(status, body);
       const { refreshAccessToken } = await import("./client");
       const { RefreshTokenRejectedError } = await import("./errors");
 
-      const err = await refreshAccessToken("good-token").catch((e) => e);
+      const err = await refreshAccessToken("t").catch((e) => e);
       expect(err).toBeInstanceOf(Error);
+      expect(err).not.toBeInstanceOf(RefreshTokenRejectedError);
+    });
+
+    it.each([
+      ["null", "null"],
+      ["a bare JSON string", '"invalid_grant"'],
+      ["an array", "[]"],
+      ["a number", "7"],
+    ])("does not end the session for %s as a body", async (_l, body) => {
+      respondWith(400, body);
+      const { refreshAccessToken } = await import("./client");
+      const { RefreshTokenRejectedError } = await import("./errors");
+
+      const err = await refreshAccessToken("t").catch((e) => e);
       expect(err).not.toBeInstanceOf(RefreshTokenRejectedError);
     });
 
