@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+import { LocalDate } from "@/components/local-date";
 import { MarkdownRenderer } from "@/components/markdown";
 import { sheetCss } from "@/components/prop-list/sheet";
 import {
@@ -86,21 +87,6 @@ const ownCss = `
 .hxp .failed { color: var(--red-text); padding-top: 1.5rem; }
 `;
 
-/**
- * The suggestions table has one text column, so the form at /props/suggest
- * appends the notes to the claim. Split them apart again for reading.
- */
-function parsePropText(propText: string) {
-  const notesMatch = propText.match(/\n\nNotes: ([\s\S]+)$/);
-  if (notesMatch) {
-    return {
-      mainText: propText.replace(/\n\nNotes: [\s\S]+$/, "").trim(),
-      notes: notesMatch[1].trim(),
-    };
-  }
-  return { mainText: propText.trim(), notes: null };
-}
-
 export default function SuggestedProps() {
   const [suggestedProps, setSuggestedProps] = useState<VSuggestedProp[]>([]);
   const [propToDelete, setPropToDelete] = useState<VSuggestedProp | null>(null);
@@ -167,19 +153,20 @@ export default function SuggestedProps() {
           <p className="lede">Nobody has suggested a prop yet.</p>
         ) : (
           suggestedProps.map((prop) => {
-            const { mainText, notes } = parsePropText(prop.prop_text);
             return (
               <article className="sug" key={prop.id}>
                 <div className="claim">
-                  <MarkdownRenderer className="md">{mainText}</MarkdownRenderer>
+                  <MarkdownRenderer className="md">
+                    {prop.prop_text}
+                  </MarkdownRenderer>
                 </div>
 
-                {notes && (
+                {prop.notes && (
                   <div className="notes">
                     <span className="lbl">Notes</span>
                     <div className="body">
                       <MarkdownRenderer className="md">
-                        {notes}
+                        {prop.notes}
                       </MarkdownRenderer>
                     </div>
                   </div>
@@ -188,6 +175,8 @@ export default function SuggestedProps() {
                 <div className="foot">
                   <span className="by">
                     Suggested by <span className="who">{prop.user_name}</span>
+                    {" · "}
+                    <LocalDate date={prop.created_at} />
                   </span>
                   <button
                     type="button"

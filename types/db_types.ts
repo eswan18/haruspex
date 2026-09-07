@@ -60,10 +60,7 @@ export type UserUpdate = Updateable<UsersTable>;
  * So it is a type, and its value is that widening it has to be deliberate.
  * Prefer it over hand-written inline shapes when returning other people's rows.
  */
-export type PublicUser = Pick<
-  User,
-  "id" | "name" | "username" | "picture_url"
->;
+export type PublicUser = Pick<User, "id" | "name" | "username" | "picture_url">;
 
 export interface CategoriesTable {
   id: Generated<number>;
@@ -125,6 +122,8 @@ export interface SuggestedPropsTable {
   id: Generated<number>;
   suggester_user_id: number;
   prop: string;
+  /** How it should be settled. Null when the suggester left the box empty. */
+  notes: string | null;
   updated_at: Generated<Date>;
   created_at: Generated<Date>;
 }
@@ -310,6 +309,8 @@ export type VUser = Selectable<VUsersView>;
 export interface VSuggestedPropsView {
   id: number;
   prop_text: string;
+  notes: string | null;
+  created_at: Date;
   user_id: number;
   user_name: string;
   user_email: string;
