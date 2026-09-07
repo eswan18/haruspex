@@ -98,19 +98,10 @@ const ownCss = `
 
 .hxp .sug .acts { display: flex; gap: 1.25rem; white-space: nowrap; }
 
-/* The reviewed section opens under a rule of its own, so the queue above it
-   reads as the whole page until you ask for the rest. */
-.hxp .reviewed-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 1.5rem;
-  flex-wrap: wrap;
-  margin-top: 3rem;
-  padding-top: 1.25rem;
-  border-top: 2px solid var(--ink);
-}
-.hxp .reviewed-head .riso-seg { margin-left: auto; }
+/* Nothing here for the reviewed section's head: it is an h2.kicker holding a
+   .bucket, which the shared sheet already draws. Wrapping it in a flex
+   container is what broke it -- that made the h2 a flex item, so its 2px
+   section rule shrank to the width of its own text. */
 `;
 
 const REVIEWED_CHOICES: { id: ReviewedFilter; label: string }[] = [
@@ -309,18 +300,22 @@ export function SuggestedPropsReview() {
 
         {!loading && !loadError && queue.reviewedCount > 0 && (
           <>
-            <div className="reviewed-head">
-              <h2 className="kicker">
-                <button
-                  type="button"
-                  className="act"
-                  aria-expanded={filter !== null}
-                  onClick={() => show(filter === null ? "all" : null)}
-                >
-                  {filter === null ? "Show" : "Hide"} reviewed ·{" "}
-                  {queue.reviewedCount}
-                </button>
-              </h2>
+            <h2 className="kicker">
+              {/* A .bucket, not a plain action: the section head doubles as
+                  the control that opens it, and the sheet draws that as a
+                  rule under the words plus a caret, thickening when open. */}
+              <button
+                type="button"
+                className="bucket"
+                aria-expanded={filter !== null}
+                data-state={filter === null ? "closed" : "open"}
+                onClick={() => show(filter === null ? "all" : null)}
+              >
+                Reviewed · {queue.reviewedCount}
+                <span className="car" aria-hidden="true">
+                  {filter === null ? "▾" : "▴"}
+                </span>
+              </button>
 
               {filter !== null && (
                 <span className="riso-seg">
@@ -336,7 +331,7 @@ export function SuggestedPropsReview() {
                   ))}
                 </span>
               )}
-            </div>
+            </h2>
 
             {filter !== null &&
               (queue.reviewed.length === 0 ? (
