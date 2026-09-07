@@ -1,0 +1,356 @@
+"use client";
+
+import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+
+import { LocalDate } from "@/components/local-date";
+import { MarkdownRenderer } from "@/components/markdown";
+import { sheetCss } from "@/components/prop-list/sheet";
+import {
+  useServerAction,
+  useServerActionNoParams,
+} from "@/hooks/use-server-action";
+import { getSuggestedProps, setSuggestedPropStatus } from "@/lib/db_actions";
+import type { SuggestedPropStatus, VSuggestedProp } from "@/types/db_types";
+import {
+  REVIEWED_PARAM,
+  partitionQueue,
+  reviewedFilterOf,
+  type ReviewedFilter,
+} from "./review-queue";
+
+const ownCss = `
+/* One suggestion per block, separated by a hairline. Not a table: a claim is
+   a sentence of unpredictable length, and the only column worth aligning
+   would be the byline. */
+.hxp .sug { padding: 1.5rem 0 1.25rem; border-bottom: 1px solid var(--rule); }
+.hxp .sug .claim { font-size: 1rem; max-width: 44rem; }
+
+/* The notes arrive glued to the claim, so they are set apart the way an aside
+   is: indented off a rule, quieter, and labelled with the same word the
+   suggestion form put over the box they were typed into. */
+.hxp .sug .notes {
+  margin-top: 1rem;
+  border-left: 1px solid var(--rule);
+  padding-left: 1rem;
+  max-width: 34rem;
+}
+.hxp .sug .notes .lbl {
+  display: block;
+  font-family: var(--font-roboto-mono), ui-monospace, monospace;
+  font-size: 0.6875rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  padding-bottom: 0.375rem;
+}
+.hxp .sug .notes .body { color: var(--ink-muted); font-size: 0.875rem; }
+
+.hxp .sug .foot {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding-top: 1rem;
+}
+.hxp .sug .by {
+  font-family: var(--font-roboto-mono), ui-monospace, monospace;
+  font-size: 0.6875rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+.hxp .sug .by .who {
+  text-transform: none;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+}
+
+.hxp .act {
+  font-family: var(--font-roboto-mono), ui-monospace, monospace;
+  font-size: 0.6875rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  background: none;
+  border: 0;
+  border-bottom: 1px solid color-mix(in oklab, var(--ink) 40%, transparent);
+  padding: 0 0 0.25rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.hxp .act:hover:not(:disabled) { color: var(--red-text); border-bottom-color: var(--red-text); }
+.hxp .act:disabled { color: var(--ink-faint); border-bottom-color: transparent; cursor: default; }
+
+.hxp .failed { color: var(--red-text); padding-top: 1.5rem; }
+
+/* The decision, set as a kicker rather than a coloured chip: red is spoken for
+   here, and "rejected" is a ruling, not a failure. */
+.hxp .sug .verdict {
+  font-family: var(--font-roboto-mono), ui-monospace, monospace;
+  font-size: 0.6875rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+.hxp .sug .verdict .word { color: var(--ink); }
+
+.hxp .sug .acts { display: flex; gap: 1.25rem; white-space: nowrap; }
+
+/* The reviewed section opens under a rule of its own, so the queue above it
+   reads as the whole page until you ask for the rest. */
+.hxp .reviewed-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  margin-top: 3rem;
+  padding-top: 1.25rem;
+  border-top: 2px solid var(--ink);
+}
+.hxp .reviewed-head .riso-seg { margin-left: auto; }
+`;
+
+const REVIEWED_CHOICES: { id: ReviewedFilter; label: string }[] = [
+  { id: "all", label: "All" },
+  { id: "accepted", label: "Accepted" },
+  { id: "rejected", label: "Rejected" },
+];
+
+export function SuggestedPropsReview() {
+  const [suggestedProps, setSuggestedProps] = useState<VSuggestedProp[]>([]);
+
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  const filter = reviewedFilterOf(Object.fromEntries(searchParams.entries()));
+
+  const getSuggestedPropsAction = useServerActionNoParams(getSuggestedProps, {
+    showToast: false,
+    onSuccess: (data) => {
+      setSuggestedProps(data);
+    },
+  });
+
+  const setStatusAction = useServerAction(setSuggestedPropStatus, {
+    showToast: false,
+    // Refetch rather than patch in place: the server decides decided_at and
+    // who decided, and this page has no way to know either.
+    onSuccess: () => {
+      getSuggestedPropsAction.execute();
+    },
+  });
+
+  // Load suggested props on component mount
+  useEffect(() => {
+    getSuggestedPropsAction.execute();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- Only run once on mount to avoid infinite loop
+  }, []);
+
+  const loading = getSuggestedPropsAction.isLoading;
+  const loadError = getSuggestedPropsAction.error;
+  const deciding = setStatusAction.isLoading;
+
+  const queue = useMemo(
+    () => partitionQueue(suggestedProps, filter),
+    [suggestedProps, filter],
+  );
+
+  /**
+   * `replace`, not `push`: this is which slice of one page you are looking at,
+   * and a history entry per click would bury the page you arrived from. Same
+   * reasoning as the open-props filter.
+   */
+  function show(next: ReviewedFilter | null) {
+    const params = new URLSearchParams(searchParams.toString());
+    if (next === null) {
+      params.delete(REVIEWED_PARAM);
+    } else {
+      params.set(REVIEWED_PARAM, next);
+    }
+    const query = params.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, {
+      scroll: false,
+    });
+  }
+
+  function decide(id: number, status: SuggestedPropStatus | null) {
+    setStatusAction.execute({ id, status });
+  }
+
+  function Suggestion({ prop }: { prop: VSuggestedProp }) {
+    return (
+      <article className="sug" key={prop.id}>
+        <div className="claim">
+          <MarkdownRenderer className="md">{prop.prop_text}</MarkdownRenderer>
+        </div>
+
+        {prop.notes && (
+          <div className="notes">
+            <span className="lbl">Notes</span>
+            <div className="body">
+              <MarkdownRenderer className="md">{prop.notes}</MarkdownRenderer>
+            </div>
+          </div>
+        )}
+
+        <div className="foot">
+          <span className="by">
+            Suggested by <span className="who">{prop.user_name}</span>
+            {" · "}
+            <LocalDate date={prop.created_at} />
+          </span>
+
+          {prop.status === null ? (
+            <span className="acts">
+              <button
+                type="button"
+                className="act"
+                disabled={deciding}
+                onClick={() => decide(prop.id, "accepted")}
+              >
+                Accept
+              </button>
+              <button
+                type="button"
+                className="act"
+                disabled={deciding}
+                onClick={() => decide(prop.id, "rejected")}
+              >
+                Reject
+              </button>
+            </span>
+          ) : (
+            <span className="acts">
+              <button
+                type="button"
+                className="act"
+                disabled={deciding}
+                onClick={() =>
+                  decide(
+                    prop.id,
+                    prop.status === "accepted" ? "rejected" : "accepted",
+                  )
+                }
+              >
+                {prop.status === "accepted" ? "Reject" : "Accept"} instead
+              </button>
+              <button
+                type="button"
+                className="act"
+                disabled={deciding}
+                onClick={() => decide(prop.id, null)}
+              >
+                Reopen
+              </button>
+            </span>
+          )}
+        </div>
+
+        {prop.status !== null && (
+          <div className="foot">
+            <span className="verdict">
+              <span className="word">{prop.status}</span>
+              {prop.decided_by_name && ` by ${prop.decided_by_name}`}
+              {prop.decided_at && (
+                <>
+                  {" · "}
+                  <LocalDate date={prop.decided_at} />
+                </>
+              )}
+            </span>
+          </div>
+        )}
+      </article>
+    );
+  }
+
+  return (
+    <div className="hxp">
+      <style dangerouslySetInnerHTML={{ __html: sheetCss + ownCss }} />
+      <div className="col">
+        <header className="masthead">
+          <h1>Suggested props</h1>
+        </header>
+
+        <h2 className="kicker">
+          <span>
+            In review
+            {!loading && !loadError && (
+              <span className="aside num"> · {queue.pending.length}</span>
+            )}
+          </span>
+          <Link className="aside" href="/admin">
+            ← Admin
+          </Link>
+        </h2>
+
+        <p className="lede">
+          Propositions forecasters have sent in. Accept one that is going into a
+          season and reject one that is not; either can be changed later.
+        </p>
+
+        {loadError ? (
+          <p className="failed">{loadError}</p>
+        ) : loading ? (
+          <p className="lede">Loading suggestions…</p>
+        ) : queue.pending.length === 0 ? (
+          <p className="lede">
+            {suggestedProps.length === 0
+              ? "Nobody has suggested a prop yet."
+              : "Nothing left to review."}
+          </p>
+        ) : (
+          queue.pending.map((prop) => <Suggestion key={prop.id} prop={prop} />)
+        )}
+
+        {!loading && !loadError && queue.reviewedCount > 0 && (
+          <>
+            <div className="reviewed-head">
+              <h2 className="kicker">
+                <button
+                  type="button"
+                  className="act"
+                  aria-expanded={filter !== null}
+                  onClick={() => show(filter === null ? "all" : null)}
+                >
+                  {filter === null ? "Show" : "Hide"} reviewed ·{" "}
+                  {queue.reviewedCount}
+                </button>
+              </h2>
+
+              {filter !== null && (
+                <span className="riso-seg">
+                  {REVIEWED_CHOICES.map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      aria-pressed={filter === c.id}
+                      onClick={() => show(c.id)}
+                    >
+                      {c.label}
+                    </button>
+                  ))}
+                </span>
+              )}
+            </div>
+
+            {filter !== null &&
+              (queue.reviewed.length === 0 ? (
+                <p className="lede">
+                  Nothing {filter === "all" ? "" : filter}.
+                </p>
+              ) : (
+                queue.reviewed.map((prop) => (
+                  <Suggestion key={prop.id} prop={prop} />
+                ))
+              ))}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}

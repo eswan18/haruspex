@@ -1,6 +1,10 @@
 "use server";
 
-import { NewSuggestedProp, VSuggestedProp } from "@/types/db_types";
+import {
+  NewSuggestedProp,
+  SuggestedPropStatus,
+  VSuggestedProp,
+} from "@/types/db_types";
 import { getUserFromCookies } from "@/lib/get-user";
 import { logger } from "@/lib/logger";
 import { revalidatePath } from "next/cache";
@@ -117,39 +121,56 @@ export async function createSuggestedProp({
   }
 }
 
-export async function deleteSuggestedProp({
+export async function setSuggestedPropStatus({
   id,
+  status,
 }: {
   id: number;
+  /** Null reopens it: back to pending, with the decision cleared. */
+  status: SuggestedPropStatus | null;
 }): Promise<ServerActionResult<void>> {
   const currentUser = await getUserFromCookies();
-  logger.debug("Deleting suggested prop", {
+  logger.debug("Setting suggested prop status", {
     suggestedPropId: id,
+    status,
     currentUserId: currentUser?.id,
   });
 
   const startTime = Date.now();
   try {
     if (!currentUser?.is_admin) {
-      logger.warn("Unauthorized attempt to delete suggested prop", {
+      logger.warn("Unauthorized attempt to set suggested prop status", {
         suggestedPropId: id,
+        status,
         currentUserId: currentUser?.id,
       });
       return error(
-        "Only admins can delete suggested props",
+        "Only admins can review suggested props",
         ERROR_CODES.UNAUTHORIZED,
       );
     }
 
-    await withRLS(currentUser?.id, async (trx) => {
-      await trx.deleteFrom("suggested_props").where("id", "=", id).execute();
+    await withRLS(currentUser.id, async (trx) => {
+      await trx
+        .updateTable("suggested_props")
+        .set({
+          status,
+          // Who decided comes from the session, never the request -- the same
+          // rule resolutions follow. Clearing the status clears both, which is
+          // what suggested_props_decision_check insists on.
+          decided_by: status === null ? null : currentUser.id,
+          decided_at: status === null ? null : new Date(),
+        })
+        .where("id", "=", id)
+        .execute();
     });
 
     const duration = Date.now() - startTime;
-    logger.info("Suggested prop deleted successfully", {
-      operation: "deleteSuggestedProp",
+    logger.info("Suggested prop status set successfully", {
+      operation: "setSuggestedPropStatus",
       table: "suggested_props",
       suggestedPropId: id,
+      status,
       duration,
     });
 
@@ -157,12 +178,13 @@ export async function deleteSuggestedProp({
     return success(undefined);
   } catch (err) {
     const duration = Date.now() - startTime;
-    logger.error("Failed to delete suggested prop", err as Error, {
-      operation: "deleteSuggestedProp",
+    logger.error("Failed to set suggested prop status", err as Error, {
+      operation: "setSuggestedPropStatus",
       table: "suggested_props",
       suggestedPropId: id,
+      status,
       duration,
     });
-    return error("Failed to delete suggested prop", ERROR_CODES.DATABASE_ERROR);
+    return error("Failed to update the suggestion", ERROR_CODES.DATABASE_ERROR);
   }
 }

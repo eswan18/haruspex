@@ -118,12 +118,23 @@ export type Resolution = Selectable<ResolutionsTable>;
 export type NewResolution = Insertable<ResolutionsTable>;
 export type ResolutionUpdate = Updateable<ResolutionsTable>;
 
+/**
+ * An admin's ruling on a suggestion. Null is pending -- the absence of a
+ * decision rather than a third state, enforced by a CHECK in
+ * 1788566400000 that keeps it null in step with decided_at.
+ */
+export type SuggestedPropStatus = "accepted" | "rejected";
+
 export interface SuggestedPropsTable {
   id: Generated<number>;
   suggester_user_id: number;
   prop: string;
   /** How it should be settled. Null when the suggester left the box empty. */
   notes: string | null;
+  status: SuggestedPropStatus | null;
+  /** Who ruled on it. Null on a pending one, and on a ruling by nobody. */
+  decided_by: number | null;
+  decided_at: Date | null;
   updated_at: Generated<Date>;
   created_at: Generated<Date>;
 }
@@ -314,6 +325,9 @@ export interface VSuggestedPropsView {
   user_id: number;
   user_name: string;
   user_email: string;
+  status: SuggestedPropStatus | null;
+  decided_at: Date | null;
+  decided_by_name: string | null;
 }
 export type VSuggestedProp = Selectable<VSuggestedPropsView>;
 
