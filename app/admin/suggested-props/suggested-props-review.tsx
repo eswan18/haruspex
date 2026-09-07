@@ -102,6 +102,18 @@ const ownCss = `
    .bucket, which the shared sheet already draws. Wrapping it in a flex
    container is what broke it -- that made the h2 a flex item, so its 2px
    section rule shrank to the width of its own text. */
+
+/* The filter belongs to what opens, not to the head. In the head it made the
+   row grow by its own height the moment the section opened -- the head is a
+   baseline-aligned flex row, so it takes the height of its tallest child, and
+   the seg is about 10px taller than the words beside it. Everything below
+   dropped by that much on every toggle. Out here it can only push down what it
+   precedes. Same row open-props puts under its own kicker. */
+.hxp .filters {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 1.5rem;
+}
 `;
 
 const REVIEWED_CHOICES: { id: ReviewedFilter; label: string }[] = [
@@ -316,8 +328,10 @@ export function SuggestedPropsReview() {
                   {filter === null ? "▾" : "▴"}
                 </span>
               </button>
+            </h2>
 
-              {filter !== null && (
+            {filter !== null && (
+              <div className="filters">
                 <span className="riso-seg">
                   {REVIEWED_CHOICES.map((c) => (
                     <button
@@ -330,8 +344,8 @@ export function SuggestedPropsReview() {
                     </button>
                   ))}
                 </span>
-              )}
-            </h2>
+              </div>
+            )}
 
             {filter !== null &&
               (queue.reviewed.length === 0 ? (
