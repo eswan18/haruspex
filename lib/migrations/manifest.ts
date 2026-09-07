@@ -50,4 +50,6 @@ export const MIGRATION_MANIFEST: readonly string[] = [
   "1788220800000_add-choice-props",
   "1788307200000_fail-closed-private-competition-rls",
   "1788393600000_unique-idp-user-id",
+  "1788480000000_add-notes-to-suggested-props",
+  "1788566400000_add-review-status-to-suggested-props",
 ];

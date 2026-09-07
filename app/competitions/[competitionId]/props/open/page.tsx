@@ -1,5 +1,6 @@
 import ErrorPage from "@/components/pages/error-page";
 import { getCurrentUserRole } from "@/lib/db_actions/competition-members";
+import { canCreateProps } from "@/lib/prop-write-access";
 import { getPropsWithUserForecasts } from "@/lib/db_actions/forecasts";
 import { competitionAccess } from "../../access";
 import { AccessDenied } from "../../access-denied";
@@ -44,13 +45,13 @@ export default async function Page({
       isAdmin={
         user.is_admin || (roleResult.success && roleResult.data === "admin")
       }
-      // Mirrors the new-prop route's own guard, which admits only competition
-      // admins of a private competition — not site admins.
-      canWriteProps={
-        competition.is_private &&
-        roleResult.success &&
-        roleResult.data === "admin"
-      }
+      // The same rule the new-prop route enforces, now asked once rather
+      // than mirrored here.
+      canWriteProps={canCreateProps({
+        isPrivate: competition.is_private,
+        role: roleResult.success ? roleResult.data : null,
+        isSiteAdmin: user.is_admin,
+      })}
     />
   );
 }

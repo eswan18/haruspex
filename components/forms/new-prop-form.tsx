@@ -84,10 +84,15 @@ export function NewPropForm({
   target,
   categories,
   userId,
+  initialText = "",
+  initialNotes = null,
 }: {
   target: PropTarget;
   categories: Category[];
   userId: number;
+  /** Seeded when the form is opened from an accepted suggestion. */
+  initialText?: string;
+  initialNotes?: string | null;
 }) {
   const router = useRouter();
   const optionsLabelId = useId();
@@ -99,11 +104,11 @@ export function NewPropForm({
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      text: "",
+      text: initialText,
       kind: "binary",
       // The kind select seeds these when the kind becomes a choice kind.
       options: [],
-      notes: null,
+      notes: initialNotes,
       category_id: null,
       forecasts_due_date: undefined,
       resolution_due_date: undefined,

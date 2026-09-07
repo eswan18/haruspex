@@ -19,7 +19,7 @@ vi.mock("next/cache", () => ({
 import {
   getSuggestedProps,
   createSuggestedProp,
-  deleteSuggestedProp,
+  setSuggestedPropStatus,
 } from "./suggested-props";
 
 describe("Suggested Props Unit Tests", () => {
@@ -170,11 +170,29 @@ describe("Suggested Props Unit Tests", () => {
     });
   });
 
-  describe("deleteSuggestedProp", () => {
+  describe("setSuggestedPropStatus", () => {
+    /** Captures what the action wrote, so the assertions read the real values. */
+    function mockUpdate() {
+      const set = vi.fn().mockReturnThis();
+      const trx = {
+        updateTable: vi.fn().mockReturnThis(),
+        set,
+        where: vi.fn().mockReturnThis(),
+        execute: vi.fn().mockResolvedValue(undefined),
+      };
+      vi.mocked(dbHelpers.withRLS).mockImplementation(async (userId, fn) =>
+        fn(trx as any),
+      );
+      return { trx, set };
+    }
+
     it("should require admin access", async () => {
       vi.mocked(getUser.getUserFromCookies).mockResolvedValue(mockUser as any);
 
-      const result = await deleteSuggestedProp({ id: 1 });
+      const result = await setSuggestedPropStatus({
+        id: 1,
+        status: "accepted",
+      });
 
       expect(result.success).toBe(false);
       if (!result.success) {
@@ -183,25 +201,50 @@ describe("Suggested Props Unit Tests", () => {
       }
     });
 
-    it("should delete suggestion for admin", async () => {
+    it("should record the decision for an admin", async () => {
       vi.mocked(getUser.getUserFromCookies).mockResolvedValue(
         mockAdminUser as any,
       );
+      const { trx, set } = mockUpdate();
 
-      const mockTrx = {
-        deleteFrom: vi.fn().mockReturnThis(),
-        where: vi.fn().mockReturnThis(),
-        execute: vi.fn().mockResolvedValue(undefined),
-      };
-
-      vi.mocked(dbHelpers.withRLS).mockImplementation(async (userId, fn) => {
-        return fn(mockTrx as any);
+      const result = await setSuggestedPropStatus({
+        id: 1,
+        status: "accepted",
       });
 
-      const result = await deleteSuggestedProp({ id: 1 });
-
       expect(result.success).toBe(true);
-      expect(mockTrx.deleteFrom).toHaveBeenCalledWith("suggested_props");
+      expect(trx.updateTable).toHaveBeenCalledWith("suggested_props");
+      const written = set.mock.calls[0][0];
+      expect(written.status).toBe("accepted");
+      expect(written.decided_at).toBeInstanceOf(Date);
+    });
+
+    it("should take the decider from the session, not the request", async () => {
+      vi.mocked(getUser.getUserFromCookies).mockResolvedValue(
+        mockAdminUser as any,
+      );
+      const { set } = mockUpdate();
+
+      await setSuggestedPropStatus({ id: 1, status: "rejected" });
+
+      expect(set.mock.calls[0][0].decided_by).toBe(mockAdminUser.id);
+    });
+
+    it("should clear the whole decision when reopening", async () => {
+      // suggested_props_decision_check rejects a status without a timestamp
+      // and a timestamp without a status, so all three must clear together.
+      vi.mocked(getUser.getUserFromCookies).mockResolvedValue(
+        mockAdminUser as any,
+      );
+      const { set } = mockUpdate();
+
+      await setSuggestedPropStatus({ id: 1, status: null });
+
+      expect(set.mock.calls[0][0]).toMatchObject({
+        status: null,
+        decided_by: null,
+        decided_at: null,
+      });
     });
 
     it("should handle database errors", async () => {
@@ -209,10 +252,13 @@ describe("Suggested Props Unit Tests", () => {
         mockAdminUser as any,
       );
       vi.mocked(dbHelpers.withRLS).mockRejectedValue(
-        new Error("Delete failed"),
+        new Error("Update failed"),
       );
 
-      const result = await deleteSuggestedProp({ id: 1 });
+      const result = await setSuggestedPropStatus({
+        id: 1,
+        status: "accepted",
+      });
 
       expect(result.success).toBe(false);
       if (!result.success) {

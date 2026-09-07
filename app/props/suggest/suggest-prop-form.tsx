@@ -47,13 +47,13 @@ export function SuggestPropForm() {
     setSaving(true);
     setError("");
     try {
-      // The suggestions table has one text column, so the notes ride along
-      // inside it until it grows one of its own.
-      const text = values.notes
-        ? `${values.propText}\n\nNotes: ${values.notes}`
-        : values.propText;
       const result = await createSuggestedProp({
-        prop: { prop: text, suggester_user_id: user.id },
+        prop: {
+          prop: values.propText,
+          // An empty box is an absent note, not an empty one.
+          notes: values.notes?.trim() ? values.notes : null,
+          suggester_user_id: user.id,
+        },
       });
       if (result.success) {
         form.reset({ propText: "", notes: "" });
