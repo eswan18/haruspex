@@ -277,8 +277,13 @@ body:has(.hxd) { background: var(--riso-paper); }
   color: var(--ink-muted);
   font-variant-numeric: tabular-nums;
 }
-.hxd .item .hit { color: var(--ink); }
-.hxd .item .miss { color: var(--red-text); }
+/* Every outcome is set the same way. Reddening the ones the reader forecasted
+   against was tried and dropped -- the prop lists reached the same conclusion
+   about penalties (see Penalty in components/prop-list/sheet.tsx). Being on the
+   far side of a coin flip is not a failure: a well-judged 45% is supposed to
+   come up No most of the time, and colouring it as a miss argues the opposite.
+   Ink, one shade up from the meta line, so the outcome reads as the fact. */
+.hxd .item .outcome { color: var(--ink); }
 .hxd .empty { color: var(--ink-muted); font-size: 0.9375rem; padding: 0.875rem 0; }
 
 /* ---- narrow screens ---- */
@@ -498,22 +503,17 @@ export function DashboardView({
             {resolved.length === 0 ? (
               <p className="empty">Nothing resolved yet.</p>
             ) : (
-              resolved.map((f) => {
-                const said = f.forecast;
-                const happened = f.resolution;
-                const missed = happened ? said < 0.5 : said > 0.5;
-                return (
-                  <div className="item" key={f.forecastId}>
-                    <Link href={`/props/${f.propId}`}>{f.propText}</Link>
-                    <span className="meta">
-                      You said {Math.round(said * 100)}% ·{" "}
-                      <span className={missed ? "miss" : "hit"}>
-                        {happened ? "Yes" : "No"}
-                      </span>
+              resolved.map((f) => (
+                <div className="item" key={f.forecastId}>
+                  <Link href={`/props/${f.propId}`}>{f.propText}</Link>
+                  <span className="meta">
+                    You said {Math.round(f.forecast * 100)}% ·{" "}
+                    <span className="outcome">
+                      {f.resolution ? "Yes" : "No"}
                     </span>
-                  </div>
-                );
-              })
+                  </span>
+                </div>
+              ))
             )}
           </div>
 
