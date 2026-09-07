@@ -9,6 +9,7 @@ import {
 import { getUserFromCookies } from "../get-user";
 import { revalidatePath } from "next/cache";
 import { logger } from "@/lib/logger";
+import { canCreateProps } from "@/lib/prop-write-access";
 import {
   ServerActionResult,
   success,
@@ -95,6 +96,69 @@ export async function getCompetitionById(
       duration,
     });
     return error("Failed to retrieve competition", ERROR_CODES.DATABASE_ERROR);
+  }
+}
+
+/**
+ * The competitions this user could add a prop to.
+ *
+ * Asked on the server because the answer needs the membership role, which a
+ * client has no cheap way to get -- and offering a destination the new-prop
+ * route will then refuse is worse than not offering it. One left join rather
+ * than a role lookup per competition.
+ */
+export async function getWritableCompetitions(): Promise<
+  ServerActionResult<Competition[]>
+> {
+  const currentUser = await getUserFromCookies();
+
+  try {
+    if (!currentUser) {
+      return error("You must be logged in", ERROR_CODES.UNAUTHORIZED);
+    }
+
+    // Two plain queries rather than one join: a join would hang `role` off
+    // every competition row and leave it to be stripped back off before the
+    // rows are Competitions again.
+    const { competitions, memberships } = await withRLS(
+      currentUser.id,
+      async (trx) => {
+        const [competitions, memberships] = await Promise.all([
+          trx.selectFrom("competitions").selectAll().execute(),
+          trx
+            .selectFrom("competition_members")
+            .select(["competition_id", "role"])
+            .where("user_id", "=", currentUser.id)
+            .execute(),
+        ]);
+        return { competitions, memberships };
+      },
+    );
+
+    const roleOf = new Map(memberships.map((m) => [m.competition_id, m.role]));
+    const writable = competitions.filter((competition) =>
+      canCreateProps({
+        isPrivate: competition.is_private,
+        role: roleOf.get(competition.id) ?? null,
+        isSiteAdmin: currentUser.is_admin,
+      }),
+    );
+
+    logger.info("Retrieved writable competitions", {
+      operation: "getWritableCompetitions",
+      table: "competitions",
+      currentUserId: currentUser.id,
+      count: writable.length,
+    });
+
+    return success(writable);
+  } catch (err) {
+    logger.error("Failed to get writable competitions", err as Error, {
+      operation: "getWritableCompetitions",
+      table: "competitions",
+      currentUserId: currentUser?.id,
+    });
+    return error("Failed to retrieve competitions", ERROR_CODES.DATABASE_ERROR);
   }
 }
 

@@ -8,11 +8,27 @@ import { LocalDate } from "@/components/local-date";
 import { MarkdownRenderer } from "@/components/markdown";
 import { sheetCss } from "@/components/prop-list/sheet";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   useServerAction,
   useServerActionNoParams,
 } from "@/hooks/use-server-action";
-import { getSuggestedProps, setSuggestedPropStatus } from "@/lib/db_actions";
-import type { SuggestedPropStatus, VSuggestedProp } from "@/types/db_types";
+import {
+  getSuggestedProps,
+  getWritableCompetitions,
+  setSuggestedPropStatus,
+} from "@/lib/db_actions";
+import type {
+  Competition,
+  SuggestedPropStatus,
+  VSuggestedProp,
+} from "@/types/db_types";
 import {
   REVIEWED_PARAM,
   partitionQueue,
@@ -147,9 +163,21 @@ export function SuggestedPropsReview() {
     },
   });
 
+  // Offered after an accept. The accept is already recorded by then, so
+  // dismissing this costs nothing -- it asks about the next step, not the one
+  // just taken.
+  const [offerPropFor, setOfferPropFor] = useState<VSuggestedProp | null>(null);
+  const [writable, setWritable] = useState<Competition[]>([]);
+
+  const getWritableAction = useServerActionNoParams(getWritableCompetitions, {
+    showToast: false,
+    onSuccess: (data) => setWritable(data),
+  });
+
   // Load suggested props on component mount
   useEffect(() => {
     getSuggestedPropsAction.execute();
+    getWritableAction.execute();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- Only run once on mount to avoid infinite loop
   }, []);
 
@@ -180,8 +208,14 @@ export function SuggestedPropsReview() {
     });
   }
 
-  function decide(id: number, status: SuggestedPropStatus | null) {
-    setStatusAction.execute({ id, status });
+  function decide(prop: VSuggestedProp, status: SuggestedPropStatus | null) {
+    setStatusAction.execute({ id: prop.id, status });
+    // Only on the way in to "accepted", and only when there is somewhere for
+    // the prop to go. Flipping a rejection back to accepted counts: that is
+    // the same decision, arrived at later.
+    if (status === "accepted" && writable.length > 0) {
+      setOfferPropFor(prop);
+    }
   }
 
   function Suggestion({ prop }: { prop: VSuggestedProp }) {
@@ -213,7 +247,7 @@ export function SuggestedPropsReview() {
                 type="button"
                 className="act"
                 disabled={deciding}
-                onClick={() => decide(prop.id, "accepted")}
+                onClick={() => decide(prop, "accepted")}
               >
                 Accept
               </button>
@@ -221,7 +255,7 @@ export function SuggestedPropsReview() {
                 type="button"
                 className="act"
                 disabled={deciding}
-                onClick={() => decide(prop.id, "rejected")}
+                onClick={() => decide(prop, "rejected")}
               >
                 Reject
               </button>
@@ -234,7 +268,7 @@ export function SuggestedPropsReview() {
                 disabled={deciding}
                 onClick={() =>
                   decide(
-                    prop.id,
+                    prop,
                     prop.status === "accepted" ? "rejected" : "accepted",
                   )
                 }
@@ -245,7 +279,7 @@ export function SuggestedPropsReview() {
                 type="button"
                 className="act"
                 disabled={deciding}
-                onClick={() => decide(prop.id, null)}
+                onClick={() => decide(prop, null)}
               >
                 Reopen
               </button>
@@ -360,6 +394,60 @@ export function SuggestedPropsReview() {
           </>
         )}
       </div>
+
+      {/* Dialogs stay the app's own: they are shared furniture, and this sheet
+          does not fork them. */}
+      <Dialog
+        open={offerPropFor !== null}
+        onOpenChange={(open) => {
+          if (!open) setOfferPropFor(null);
+        }}
+      >
+        <DialogContent className="riso-dialog">
+          <DialogHeader>
+            <DialogTitle className="riso-dialog-title">
+              Create a prop now?
+            </DialogTitle>
+            <DialogDescription className="riso-dialog-desc">
+              {writable.length === 1
+                ? `This will open the new prop form for ${writable[0].name}, with the claim and notes filled in.`
+                : "Pick where it goes and the new prop form opens with the claim and notes filled in."}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="hxf riso-dialog-choices">
+            {writable.map((competition) => (
+              <button
+                key={competition.id}
+                type="button"
+                className="submit"
+                onClick={() => {
+                  if (!offerPropFor) return;
+                  // The suggestion travels as an id, not as text.
+                  router.push(
+                    `/competitions/${competition.id}/props/new?from=${offerPropFor.id}`,
+                  );
+                }}
+              >
+                {competition.name}
+                <span className="arrow" aria-hidden="true">
+                  →
+                </span>
+              </button>
+            ))}
+          </div>
+
+          <DialogFooter className="hxf riso-dialog-footer">
+            <button
+              type="button"
+              className="quit"
+              onClick={() => setOfferPropFor(null)}
+            >
+              Not now
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

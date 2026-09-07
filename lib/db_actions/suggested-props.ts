@@ -62,6 +62,53 @@ export async function getSuggestedProps(): Promise<
   }
 }
 
+/**
+ * One suggestion, for seeding the new-prop form from an accepted one.
+ *
+ * Admin-only, like the list it comes from: the caller has the id in a URL,
+ * which is not authority to read the row.
+ */
+export async function getSuggestedPropById({
+  id,
+}: {
+  id: number;
+}): Promise<ServerActionResult<VSuggestedProp | null>> {
+  const currentUser = await getUserFromCookies();
+
+  try {
+    if (!currentUser?.is_admin) {
+      logger.warn("Unauthorized attempt to read a suggested prop", {
+        suggestedPropId: id,
+        currentUserId: currentUser?.id,
+      });
+      return error(
+        "Only admins can view suggested props",
+        ERROR_CODES.UNAUTHORIZED,
+      );
+    }
+
+    const row = await withRLS(currentUser.id, async (trx) => {
+      return trx
+        .selectFrom("v_suggested_props")
+        .selectAll()
+        .where("id", "=", id)
+        .executeTakeFirst();
+    });
+
+    return success(row ?? null);
+  } catch (err) {
+    logger.error("Failed to get suggested prop", err as Error, {
+      operation: "getSuggestedPropById",
+      table: "v_suggested_props",
+      suggestedPropId: id,
+    });
+    return error(
+      "Failed to retrieve the suggestion",
+      ERROR_CODES.DATABASE_ERROR,
+    );
+  }
+}
+
 export async function createSuggestedProp({
   prop,
 }: {
