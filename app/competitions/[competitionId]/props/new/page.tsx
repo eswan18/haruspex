@@ -6,6 +6,7 @@ import ErrorPage from "@/components/pages/error-page";
 import { InaccessiblePage } from "@/components/inaccessible-page";
 import { NewPropForm } from "@/components/forms/new-prop-form";
 import { canCreateProps } from "@/lib/prop-write-access";
+import { newPropAudience } from "@/lib/competition-status";
 
 export default async function NewPropPage({
   params,
@@ -87,6 +88,7 @@ export default async function NewPropPage({
         kind: "competition",
         id: competitionId,
         name: competition.name,
+        audience: newPropAudience(competition),
       }}
       categories={categories}
       userId={user.id}

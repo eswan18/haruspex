@@ -18,6 +18,12 @@ vi.mock("next/cache", () => ({
   revalidatePath: vi.fn(),
 }));
 
+vi.mock("@/lib/notifications/prop-added", () => ({
+  announcePropAdded: vi.fn().mockResolvedValue(undefined),
+}));
+
+import { announcePropAdded } from "@/lib/notifications/prop-added";
+
 // Import after mocking
 import {
   getPropById,
@@ -566,6 +572,132 @@ describe("Props Unit Tests", () => {
           expect(result.code).toBe("NOT_FOUND");
         }
       });
+    });
+  });
+
+  describe("createProp announcements", () => {
+    const forecastDate = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const resolutionDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+    const privateCompetition = {
+      is_private: true,
+      name: "Office Pool",
+      forecasts_open_date: null,
+      forecasts_close_date: null,
+      end_date: null,
+    };
+    const publicCompetition = {
+      is_private: false,
+      name: "Public Season",
+      forecasts_open_date: new Date("2026-01-01T00:00:00Z"),
+      forecasts_close_date: new Date("2026-02-01T00:00:00Z"),
+      end_date: new Date("2026-12-31T00:00:00Z"),
+    };
+
+    /** A transaction that finds `competition` and makes the caller its admin. */
+    function trxFor(competition: object | null, propId = 42) {
+      return {
+        selectFrom: vi.fn().mockImplementation(() => ({
+          select: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              where: vi.fn().mockReturnValue({
+                executeTakeFirst: vi.fn().mockResolvedValue({ role: "admin" }),
+              }),
+              executeTakeFirst: vi.fn().mockResolvedValue(competition),
+            }),
+          }),
+        })),
+        insertInto: vi.fn().mockReturnThis(),
+        values: vi.fn().mockReturnThis(),
+        returning: vi.fn().mockReturnThis(),
+        executeTakeFirstOrThrow: vi.fn().mockResolvedValue({ id: propId }),
+        execute: vi.fn().mockResolvedValue(undefined),
+      };
+    }
+
+    function useTrx(trx: object) {
+      vi.mocked(dbHelpers.withRLSAction).mockImplementation(async (_u, fn) =>
+        fn(trx as any),
+      );
+    }
+
+    const competitionProp = {
+      text: "It snows on the first of December.",
+      category_id: null,
+      competition_id: 3,
+      user_id: null,
+      forecasts_due_date: forecastDate,
+      resolution_due_date: resolutionDate,
+    };
+
+    beforeEach(() => {
+      vi.mocked(getUser.getUserFromCookies).mockResolvedValue(mockUser as any);
+    });
+
+    it("announces a private competition's new prop to its members when asked", async () => {
+      useTrx(trxFor(privateCompetition));
+
+      const result = await createProp({
+        prop: competitionProp,
+        notifyMembers: true,
+      });
+
+      expect(result.success).toBe(true);
+      expect(announcePropAdded).toHaveBeenCalledWith({
+        authorId: mockUser.id,
+        audience: "members",
+        competition: { id: 3, name: "Office Pool" },
+        prop: {
+          id: 42,
+          text: "It snows on the first of December.",
+          forecasts_due_date: forecastDate,
+        },
+      });
+    });
+
+    it("announces nothing unless asked", async () => {
+      useTrx(trxFor(privateCompetition));
+
+      const result = await createProp({ prop: competitionProp });
+
+      expect(result.success).toBe(true);
+      expect(announcePropAdded).not.toHaveBeenCalled();
+    });
+
+    it("announces nothing for a competition with no audience, even when asked", async () => {
+      useTrx(trxFor(publicCompetition));
+
+      const result = await createProp({
+        prop: { ...competitionProp, category_id: 1 },
+        notifyMembers: true,
+      });
+
+      expect(result.success).toBe(true);
+      expect(announcePropAdded).not.toHaveBeenCalled();
+    });
+
+    it("announces nothing for a personal prop, even when asked", async () => {
+      useTrx(trxFor(null));
+
+      const result = await createProp({
+        prop: { ...competitionProp, competition_id: null, user_id: mockUser.id },
+        notifyMembers: true,
+      });
+
+      expect(result.success).toBe(true);
+      expect(announcePropAdded).not.toHaveBeenCalled();
+    });
+
+    it("announces nothing when the prop is refused", async () => {
+      useTrx(trxFor(null)); // competition not found
+
+      const result = await createProp({
+        prop: competitionProp,
+        notifyMembers: true,
+      });
+
+      expect(result.success).toBe(false);
+      expect(announcePropAdded).not.toHaveBeenCalled();
     });
   });
 
