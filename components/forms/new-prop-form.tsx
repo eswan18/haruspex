@@ -17,6 +17,7 @@ import {
 } from "@/components/forms/prop-form-schema";
 import { DateTimePicker } from "@/components/ui/date-time-picker";
 import { useServerAction } from "@/hooks/use-server-action";
+import type { NewPropAudience } from "@/lib/competition-status";
 import { createProp } from "@/lib/db_actions";
 import {
   isChoiceKind,
@@ -45,6 +46,7 @@ const formSchema = z
     category_id: z.number().nullable(),
     forecasts_due_date: z.date({ message: "A forecast deadline is required" }),
     resolution_due_date: z.date({ message: "A resolution date is required" }),
+    notify_members: z.boolean(),
   })
   .refine((data) => data.forecasts_due_date > new Date(), {
     message: "The forecast deadline must be in the future",
@@ -76,9 +78,24 @@ const ownCss = `
  * A competition prop belongs to the season and to nobody; a personal one
  * belongs to its author and to no season. That single fact is the only thing
  * that differs between the two forms, so they are one form.
+ *
+ * `audience` is `newPropAudience` for the competition: who could be emailed
+ * about the new prop, or null when nobody is, in which case the form does not
+ * offer to.
  */
 export type PropTarget =
-  { kind: "competition"; id: number; name: string } | { kind: "personal" };
+  | {
+      kind: "competition";
+      id: number;
+      name: string;
+      audience: NewPropAudience | null;
+    }
+  | { kind: "personal" };
+
+/** The checkbox's wording for each audience that can be told. */
+const ANNOUNCE_LABELS: Record<NewPropAudience, string> = {
+  members: "Email the members",
+};
 
 export function NewPropForm({
   target,
@@ -100,6 +117,9 @@ export function NewPropForm({
   const notesId = useId();
   const kindId = useId();
   const categoryId = useId();
+  const announceId = useId();
+
+  const audience = target.kind === "competition" ? target.audience : null;
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -112,6 +132,9 @@ export function NewPropForm({
       category_id: null,
       forecasts_due_date: undefined,
       resolution_due_date: undefined,
+      // On by default: a prop added on its own is news. The author unticks it
+      // when loading several at once, rather than sending a burst of mail.
+      notify_members: true,
     },
   });
 
@@ -165,6 +188,9 @@ export function NewPropForm({
       options: isChoiceKind(values.kind)
         ? values.options.map((option) => option.text)
         : undefined,
+      // The box is only shown when there is an audience; the server checks
+      // again rather than trusting this.
+      notifyMembers: audience !== null && values.notify_members,
     });
   }
 
@@ -304,6 +330,28 @@ export function NewPropForm({
             </div>
           </Field>
         </div>
+
+        {audience && (
+          <Field label="Announce it" labelId={announceId}>
+            <div className="choose" role="group" aria-labelledby={announceId}>
+              <label htmlFor={`${announceId}-box`}>
+                <input
+                  type="checkbox"
+                  id={`${announceId}-box`}
+                  {...form.register("notify_members")}
+                />
+                <span>
+                  <span className="who">{ANNOUNCE_LABELS[audience]}</span>
+                  <span className="what">
+                    {" "}
+                    — each gets a link to forecast on it. Untick when adding
+                    several at once.
+                  </span>
+                </span>
+              </label>
+            </div>
+          </Field>
+        )}
 
         {create.error && <Refusal message={create.error} />}
 

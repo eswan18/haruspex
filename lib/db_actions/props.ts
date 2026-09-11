@@ -2,6 +2,7 @@
 import { getUserFromCookies } from "../get-user";
 import { revalidatePath } from "next/cache";
 import {
+  Competition,
   VProp,
   PropUpdate,
   NewProp,
@@ -18,6 +19,8 @@ import {
 import { logger } from "@/lib/logger";
 import { withRLS, withRLSAction } from "@/lib/db-helpers";
 import { attachOptions } from "@/lib/attach-options";
+import { newPropAudience } from "@/lib/competition-status";
+import { announcePropAdded } from "@/lib/notifications/prop-added";
 import { isChoiceKind, isPropKind, type PropKind } from "@/lib/prop-kind";
 import {
   validateChoiceOutcomes,
@@ -495,10 +498,17 @@ export async function updateProp({
 export async function createProp({
   prop,
   options,
+  notifyMembers = false,
 }: {
   prop: NewProp;
   /** Required for choice props, forbidden for binary ones. */
   options?: string[];
+  /**
+   * The author's opt-in to emailing the competition about this prop. Only
+   * honoured where `newPropAudience` names someone to tell; off by default so
+   * no caller sends mail it did not ask for.
+   */
+  notifyMembers?: boolean;
 }): Promise<ServerActionResult<void>> {
   const currentUser = await getUserFromCookies();
   logger.debug("Creating prop", {
@@ -588,11 +598,30 @@ export async function createProp({
     }
 
     const result = await withRLSAction(currentUser?.id, async (trx) => {
+      // Read here for the permission checks, and handed back so the
+      // announcement after commit knows who to tell.
+      let competition:
+        | Pick<
+            Competition,
+            | "name"
+            | "is_private"
+            | "forecasts_open_date"
+            | "forecasts_close_date"
+            | "end_date"
+          >
+        | undefined;
+
       // For competition props, verify the user is a competition admin
       if (prop.competition_id) {
-        const competition = await trx
+        competition = await trx
           .selectFrom("competitions")
-          .select(["is_private"])
+          .select([
+            "name",
+            "is_private",
+            "forecasts_open_date",
+            "forecasts_close_date",
+            "end_date",
+          ])
           .where("id", "=", prop.competition_id)
           .executeTakeFirst();
 
@@ -648,27 +677,47 @@ export async function createProp({
           )
           .execute();
       }
-      return success(undefined);
+      return success({ propId, competition });
     });
 
-    if (result.success) {
-      const duration = Date.now() - startTime;
-      logger.info("Prop created successfully", {
-        operation: "createProp",
-        table: "props",
-        kind,
-        optionCount: trimmedOptions.length,
-        categoryId: prop.category_id,
-        textLength: prop.text?.length,
-        duration,
-      });
+    if (!result.success) {
+      return result;
+    }
 
-      if (prop.competition_id) {
-        revalidatePath(`/competitions/${prop.competition_id}`);
+    const duration = Date.now() - startTime;
+    logger.info("Prop created successfully", {
+      operation: "createProp",
+      table: "props",
+      kind,
+      optionCount: trimmedOptions.length,
+      categoryId: prop.category_id,
+      textLength: prop.text?.length,
+      duration,
+    });
+
+    const { propId, competition } = result.data;
+    if (prop.competition_id) {
+      revalidatePath(`/competitions/${prop.competition_id}`);
+
+      const audience =
+        notifyMembers && competition ? newPropAudience(competition) : null;
+      if (competition && audience) {
+        // Fire-and-forget, after commit: announcePropAdded never throws, and
+        // the prop stands whether or not the mail goes out.
+        void announcePropAdded({
+          authorId: currentUser.id,
+          audience,
+          competition: { id: prop.competition_id, name: competition.name },
+          prop: {
+            id: propId,
+            text: prop.text,
+            forecasts_due_date: prop.forecasts_due_date ?? null,
+          },
+        });
       }
     }
 
-    return result;
+    return success(undefined);
   } catch (err) {
     const duration = Date.now() - startTime;
     logger.error("Failed to create prop", err as Error, {
