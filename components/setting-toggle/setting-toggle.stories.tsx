@@ -3,7 +3,7 @@ import { fn } from "storybook/test";
 
 import { sheetCss } from "@/components/prop-list/sheet";
 
-import { FeatureToggle, toggleCss } from "./feature-toggle";
+import { SettingToggle, toggleCss } from "./setting-toggle";
 
 /** The sheet's own stock, so the control is seen on the paper it prints on. */
 function Sheet({ children }: { children: React.ReactNode }) {
@@ -18,8 +18,8 @@ function Sheet({ children }: { children: React.ReactNode }) {
 }
 
 const meta = {
-  title: "Admin/FeatureToggle",
-  component: FeatureToggle,
+  title: "Controls/SettingToggle",
+  component: SettingToggle,
   parameters: { layout: "fullscreen" },
   tags: ["autodocs"],
   decorators: [
@@ -34,7 +34,7 @@ const meta = {
     value: true,
     onSet: fn(),
   },
-} satisfies Meta<typeof FeatureToggle>;
+} satisfies Meta<typeof SettingToggle>;
 
 export default meta;
 type Story = StoryObj<typeof meta>;

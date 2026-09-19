@@ -5,6 +5,7 @@ import type { Kysely } from "kysely";
 import type { NewPropAudience } from "@/lib/competition-status";
 import { withRLS } from "@/lib/db-helpers";
 import { logger } from "@/lib/logger";
+import { notificationEnabled } from "@/lib/notifications/preferences";
 import { publishEvent, type NotifyTarget } from "@/lib/pubsub/client";
 import type { Database } from "@/types/db_types";
 
@@ -21,7 +22,8 @@ type AudienceResolver = (
  */
 const resolvers: Record<NewPropAudience, AudienceResolver> = {
   // Everyone in the competition, admins included, bar whoever wrote the prop.
-  // Deactivated users keep their membership rows but should hear nothing.
+  // Deactivated users keep their membership rows but should hear nothing, and
+  // neither does anyone who turned these off.
   members: (db, { competitionId, authorId }) =>
     db
       .selectFrom("competition_members")
@@ -30,6 +32,7 @@ const resolvers: Record<NewPropAudience, AudienceResolver> = {
       .where("competition_members.competition_id", "=", competitionId)
       .where("users.deactivated_at", "is", null)
       .where("users.id", "!=", authorId)
+      .where(notificationEnabled("competition.prop_added"))
       .orderBy("users.id")
       .execute(),
 };

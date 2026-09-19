@@ -5,7 +5,11 @@ import { useState } from "react";
 
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { sheetCss } from "@/components/prop-list/sheet";
+import { toggleCss } from "@/components/setting-toggle/setting-toggle";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+import type { EffectivePreferences } from "@/lib/notifications/preferences";
+
+import { NotificationSettings, notifyCss } from "./notification-settings";
 
 const ownCss = `
 /* The record: a portrait struck at the left, the facts ruled beside it. Every
@@ -107,16 +111,27 @@ const ownCss = `
 /**
  * The reader's own account.
  *
- * Authentication is delegated, so almost nothing here is editable and the page
- * refuses to pretend otherwise: it prints the record the app holds about you,
- * then hands you the door to the provider that owns it. Two sections, no
- * settings, nothing invented to fill the page out.
+ * Authentication is delegated, so the record itself is not editable here and
+ * the page refuses to pretend otherwise: it prints what the app holds about
+ * you, then hands you the door to the provider that owns it. The one thing
+ * that IS ours to set is which mail we send, so that sits between them.
  */
-export function AccountDetails({ idpBaseUrl }: { idpBaseUrl?: string }) {
+export function AccountDetails({
+  idpBaseUrl,
+  notifications,
+}: {
+  idpBaseUrl?: string;
+  /** Null when nobody is signed in, or the read failed. */
+  notifications: EffectivePreferences | null;
+}) {
   const { user, isLoading } = useCurrentUser();
   return (
     <div className="hxp">
-      <style dangerouslySetInnerHTML={{ __html: sheetCss + ownCss }} />
+      <style
+        dangerouslySetInnerHTML={{
+          __html: sheetCss + ownCss + notifyCss + toggleCss,
+        }}
+      />
       <div className="col">
         <header className="masthead">
           <h1>Account</h1>
@@ -128,6 +143,7 @@ export function AccountDetails({ idpBaseUrl }: { idpBaseUrl?: string }) {
             name={user.name}
             pictureUrl={user.picture_url}
             idpBaseUrl={idpBaseUrl}
+            notifications={notifications}
           />
         ) : (
           <p className="lede">
@@ -151,12 +167,14 @@ function AccountRecord({
   name,
   pictureUrl,
   idpBaseUrl,
+  notifications,
 }: {
   email: string;
   username: string | null;
   name: string | null;
   pictureUrl: string | null;
   idpBaseUrl?: string;
+  notifications: EffectivePreferences | null;
 }) {
   const [avatarOpen, setAvatarOpen] = useState(false);
   const settingsUrl = accountSettingsUrl(idpBaseUrl);
@@ -215,6 +233,8 @@ function AccountRecord({
           </div>
         </dl>
       </div>
+
+      {notifications && <NotificationSettings initial={notifications} />}
 
       <h2 className="kicker">
         <span>Identity provider</span>

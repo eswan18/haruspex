@@ -3,20 +3,25 @@
 import { useState } from "react";
 
 /**
- * The sheet's switch.
+ * The sheet's switch: one on/off setting, wherever the app keeps one. The
+ * admin's feature flags and the reader's notification settings both print it.
  *
  * Design note. This was two mono words on one continuous line, with the line
  * under the live word inked to 2px and the dead half left as a 1px hairline.
  * It was too quiet to read: at a glance neither word looked chosen, and on a
- * feature with no default row at all — where neither IS chosen — there was
+ * setting with no stored row at all — where neither IS chosen — there was
  * nothing to tell the two situations apart.
  *
  * So it is the same segmented bar the prop lists filter with: connected cells,
- * the live one a plate of ink. One filled cell means the default is set and
- * says which way; no filled cell means there is no default row yet, and the
- * "Not set" caption beside it says so in words. Both cells stay live in that
- * state, and pressing either creates the row with that value — a single
- * toggling button could express neither the absence nor the creation.
+ * the live one a plate of ink. One filled cell means the setting is stored and
+ * says which way; no filled cell means there is no row yet, and the caption
+ * beside it says so in words. Both cells stay live in that state, and pressing
+ * either writes the row with that value — a single toggling button could
+ * express neither the absence nor the creation.
+ *
+ * A notification preference is never `null` in practice: a reader who has
+ * never chosen still shows the registry's default, because that is what they
+ * are actually getting.
  */
 export const toggleCss = `
 /* The bar itself is .riso-seg, from globals. These are the two things a
@@ -30,7 +35,7 @@ export const toggleCss = `
 .riso-seg.flip button:disabled { cursor: default; }
 `;
 
-export function FeatureToggle({
+export function SettingToggle({
   label,
   value,
   onSet,
@@ -38,9 +43,9 @@ export function FeatureToggle({
 }: {
   /** Names what is being switched, for assistive tech: a feature, a person. */
   label: string;
-  /** `null` when no flag row exists yet — neither state is live. */
+  /** `null` when no row exists yet — neither state is live. */
   value: boolean | null;
-  /** Omit for a read-only reading of the flag. */
+  /** Omit for a read-only reading of the setting. */
   onSet?: (enabled: boolean) => void;
   /** True while a save is in flight, so `value` is what was asked for. */
   busy?: boolean;
@@ -69,13 +74,13 @@ export function FeatureToggle({
 /**
  * What the control should read while a save is in flight.
  *
- * The page is drawn from the server's copy of the flags, so a press would
+ * The page is drawn from the server's copy of the setting, so a press would
  * otherwise keep showing the old value for the length of the round trip and
  * the refresh behind it — which reads as "nothing happened". This holds the
  * asked-for value in front of the server's until the two agree, and puts it
  * back if the save is refused.
  */
-export function useFlagSave(actual: boolean | null) {
+export function useSettingSave(actual: boolean | null) {
   const [wanted, setWanted] = useState<boolean | null>(null);
   const [saving, setSaving] = useState(false);
 
