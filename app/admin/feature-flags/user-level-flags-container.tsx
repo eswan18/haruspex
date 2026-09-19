@@ -10,7 +10,7 @@ import {
 } from "@/lib/db_actions";
 import type { VFeatureFlag, VUser } from "@/types/db_types";
 
-import { FeatureToggle, useFlagSave } from "./feature-toggle";
+import { SettingToggle, useSettingSave } from "@/components/setting-toggle/setting-toggle";
 
 /**
  * The per-user overrides for one feature, printed under the feature's own row
@@ -98,7 +98,7 @@ function UserFlagRow({
   onChange: () => void;
 }) {
   const { toast } = useToast();
-  const { value, busy, set } = useFlagSave(flag.enabled);
+  const { value, busy, set } = useSettingSave(flag.enabled);
   const who = flag.user_name ?? `User ${flag.user_id}`;
   return (
     <div className="urow">
@@ -106,7 +106,7 @@ function UserFlagRow({
         <span className="uid">{flag.user_id}</span>
         {who}
       </span>
-      <FeatureToggle
+      <SettingToggle
         label={who}
         value={value}
         busy={busy}
@@ -149,7 +149,7 @@ function AddUserFlagRow({
   const { toast } = useToast();
   const [users, setUsers] = useState<VUser[] | null>(null);
   const [chosen, setChosen] = useState<number | null>(null);
-  const { value, busy, set } = useFlagSave(null);
+  const { value, busy, set } = useSettingSave(null);
 
   useEffect(() => {
     let live = true;
@@ -200,7 +200,7 @@ function AddUserFlagRow({
         </select>
         {/* Nothing to switch until someone is named, so the control reads as
             unset and takes no press until then. */}
-        <FeatureToggle
+        <SettingToggle
           label={selected ? selected.name : "New override"}
           value={value}
           busy={busy}

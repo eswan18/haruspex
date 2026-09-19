@@ -51,7 +51,7 @@ This is a Next.js forecasting application inspired by Philip Tetlock's Good Judg
 - **Database**: PostgreSQL with Kysely query builder
 - **Connection**: `/lib/database.ts` exports `db` instance
 - **Types**: `/types/db_types.ts` contains all database types and table definitions
-- **Tables**: users, forecasts, props, competitions, categories, resolutions, feature_flags, competition_members (roles: `admin`/`forecaster`), plus the choice-prop tables prop_options, forecast_options, resolution_options
+- **Tables**: users, forecasts, props, competitions, categories, resolutions, feature_flags, competition_members (roles: `admin`/`forecaster`), notification_preferences, plus the choice-prop tables prop_options, forecast_options, resolution_options
 - **Prop kinds**: `props.kind` is `binary` (one yes/no probability, the header row's `forecast`/`resolution`), `one_of`, or `any_of`; the choice kinds leave the header value null and carry a probability/outcome per option in the `*_options` child tables
 - **Views**: Prefixed with `v_` (e.g., `v_forecasts`, `v_props`, `v_prop_options`) for complex queries with joins
 
@@ -89,6 +89,16 @@ This codebase follows a structured server action pattern that returns results in
   `personal-props` feature flag, which also decides whether the navbar shows
   the way in. A personal prop's deadline lives on the prop itself, so
   `getPropStatusFromProp` falls back to it when there is no competition.
+- **Email notifications**: haruspex sends no mail itself. It publishes an event
+  per recipient to Pub/Sub and the **comms** service renders and sends it, so
+  the fleet has one sender and one from address. The event types live in
+  `lib/notifications/types.ts`, which is also the registry of what a reader may
+  turn off and what they get by default. A reader's row in
+  `notification_preferences` exists only where they have actually chosen;
+  everyone else follows the default, so **changing a default moves the
+  undecided** — `types.test.ts` is the tripwire, and says what to do about it.
+  Filtering happens in haruspex at the point of publishing, via
+  `notificationEnabled()`; comms knows nothing about preferences.
 
 ### Local Development Setup
 

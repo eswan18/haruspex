@@ -3,6 +3,7 @@ export * from "./competitions";
 export * from "./competition-members";
 export * from "./competition-scores";
 export * from "./forecasts";
+export * from "./notification-preferences";
 export * from "./feature_flags";
 export * from "./prop-options";
 export * from "./props";

@@ -16,3 +16,6 @@ export const deleteCompetition = async () => success(undefined);
 export const createFeatureFlag = async () => success(undefined);
 export const updateFeatureFlag = async () => success(undefined);
 export const getUsers = async () => success([]);
+
+// Reached by the account sheet's notification settings.
+export const setNotificationPreference = async () => success(undefined);

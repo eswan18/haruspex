@@ -9,6 +9,7 @@ import {
 import { getUserFromCookies } from "../get-user";
 import { revalidatePath } from "next/cache";
 import { logger } from "@/lib/logger";
+import { notificationEnabled } from "@/lib/notifications/preferences";
 import { publishEvent } from "@/lib/pubsub/client";
 import {
   ServerActionResult,
@@ -511,10 +512,18 @@ export async function addCompetitionMemberById({
         }
       }
 
-      // Verify the target user exists and is active
+      // Verify the target user exists and is active. Whether they want to
+      // hear about it rides along as a column rather than as a condition:
+      // filtering here would turn "opted out" into "no such user" and refuse
+      // to add them at all.
       const userToAdd = await trx
         .selectFrom("users")
-        .select(["id", "name", "email"])
+        .select([
+          "id",
+          "name",
+          "email",
+          notificationEnabled("competition.member_added").as("wants_email"),
+        ])
         .where("id", "=", userId)
         .where("deactivated_at", "is", null)
         .executeTakeFirst();
@@ -574,8 +583,9 @@ export async function addCompetitionMemberById({
       });
       revalidatePath(`/competitions/${competitionId}`);
 
-      // Notify the added user (fire-and-forget, only for private competitions)
-      if (competition?.is_private) {
+      // Notify the added user (fire-and-forget, only for private competitions,
+      // and only if they have not turned these off)
+      if (competition?.is_private && userToAdd.wants_email) {
         publishEvent({
           event_type: "competition.member_added",
           source: "haruspex",

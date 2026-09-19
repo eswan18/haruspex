@@ -99,6 +99,41 @@ describe("resolveNewPropAudience against the database", () => {
   );
 
   ifRunningContainerTestsIt(
+    "leaves out a member who turned new-prop mail off",
+    async () => {
+      const competition = await createPrivateCompetition();
+      const author = await factory.createUser();
+      const optedOut = await factory.createUser();
+      const stillIn = await factory.createUser();
+
+      await addMember(competition.id, author.id, "admin");
+      await addMember(competition.id, optedOut.id, "forecaster");
+      await addMember(competition.id, stillIn.id, "forecaster");
+      await db
+        .insertInto("notification_preferences")
+        .values({
+          user_id: optedOut.id,
+          notification_type: "competition.prop_added",
+          enabled: false,
+        })
+        .execute();
+
+      // Read as the author: RLS has to let one member see another's choice,
+      // or the opt-out would be invisible here and ignored.
+      const recipients = await asUser(rls, author.id, (trx) =>
+        resolveNewPropAudience(trx, "members", {
+          competitionId: competition.id,
+          authorId: author.id,
+        }),
+      );
+
+      expect(recipients).toEqual([
+        { email: stillIn.email, name: stillIn.name },
+      ]);
+    },
+  );
+
+  ifRunningContainerTestsIt(
     "is empty when the author is the only member",
     async () => {
       const competition = await createPrivateCompetition();

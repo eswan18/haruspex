@@ -9,7 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import { createFeatureFlag, updateFeatureFlag } from "@/lib/db_actions";
 import type { VFeatureFlag } from "@/types/db_types";
 
-import { FeatureToggle, toggleCss, useFlagSave } from "./feature-toggle";
+import { SettingToggle, toggleCss, useSettingSave } from "@/components/setting-toggle/setting-toggle";
 import {
   UserLevelFlagsContainer,
   userFlagsCss,
@@ -138,7 +138,7 @@ function FeatureRow({
   const userFlags = flags.filter((flag) => flag.user_id !== null);
   // No default row at all is a third reading, not a synonym for off: an unset
   // feature is off for everyone, but nobody has said so yet.
-  const { value, busy, set } = useFlagSave(
+  const { value, busy, set } = useSettingSave(
     defaultFlag ? defaultFlag.enabled : null,
   );
 
@@ -172,7 +172,7 @@ function FeatureRow({
       <div className="frow">
         <span className="nm">{featureName}</span>
         <span className="def">
-          <FeatureToggle
+          <SettingToggle
             label={`${featureName} default`}
             value={value}
             busy={busy}

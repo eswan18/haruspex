@@ -9,6 +9,7 @@ export interface Database {
   feature_flags: FeatureFlagsTable;
   forecast_options: ForecastOptionsTable;
   forecasts: ForecastsTable;
+  notification_preferences: NotificationPreferencesTable;
   prop_options: PropOptionsTable;
   props: PropsTable;
   resolution_options: ResolutionOptionsTable;
@@ -141,6 +142,22 @@ export interface SuggestedPropsTable {
 export type SuggestedProp = Selectable<SuggestedPropsTable>;
 export type NewSuggestedProp = Insertable<SuggestedPropsTable>;
 export type SuggestedPropUpdate = Updateable<SuggestedPropsTable>;
+
+/**
+ * One row per choice a reader has actually made. No row means they have never
+ * said, and they follow the default in `lib/notifications/types.ts`.
+ */
+export interface NotificationPreferencesTable {
+  user_id: number;
+  /** An `OptionalNotificationType`; text here, as the column is. */
+  notification_type: string;
+  enabled: boolean;
+  updated_at: Generated<Date>;
+  created_at: Generated<Date>;
+}
+export type NotificationPreference = Selectable<NotificationPreferencesTable>;
+export type NewNotificationPreference =
+  Insertable<NotificationPreferencesTable>;
 
 export interface FeatureFlagsTable {
   id: Generated<number>;
