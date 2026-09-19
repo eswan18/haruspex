@@ -2,8 +2,10 @@ import "server-only";
 import { sql, type Kysely, type SqlBool, type Transaction } from "kysely";
 
 import {
+  isOptionalNotification,
   notificationDefault,
   OPTIONAL_NOTIFICATION_TYPES,
+  type NotificationType,
   type OptionalNotificationType,
 } from "@/lib/notifications/types";
 import type { Database } from "@/types/db_types";
@@ -88,4 +90,17 @@ export async function setPreference(
       }),
     )
     .execute();
+}
+
+/**
+ * The footer link for mail this reader could turn off, or undefined for mail
+ * they could not.
+ *
+ * Keyed on the registry rather than on the caller remembering: a type that is
+ * not optional has no setting to point at, and a footer offering to manage
+ * one would be a lie.
+ */
+export function manageLink(type: NotificationType): string | undefined {
+  if (!isOptionalNotification(type)) return undefined;
+  return `${process.env.APP_BASE_URL}/account`;
 }

@@ -83,6 +83,7 @@ describe("addCompetitionMemberById against the database", () => {
       const newcomer = await factory.createUser();
       const competition = await privateCompetitionRunBy(admin.id);
       vi.mocked(getUserFromCookies).mockResolvedValue(admin as never);
+      vi.stubEnv("APP_BASE_URL", "https://haruspex.test");
 
       const result = await addCompetitionMemberById({
         competitionId: competition.id,
@@ -96,6 +97,8 @@ describe("addCompetitionMemberById against the database", () => {
         expect.objectContaining({
           event_type: "competition.member_added",
           notify: [{ email: newcomer.email, name: newcomer.name }],
+          // The footer's way back to the setting that silences this.
+          manage_link: "https://haruspex.test/account",
         }),
       );
     },

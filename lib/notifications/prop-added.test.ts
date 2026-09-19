@@ -71,6 +71,9 @@ describe("announcePropAdded", () => {
         event_type: "competition.prop_added",
         source: "haruspex",
         notify_link: "https://haruspex.test/competitions/3/props/42",
+        // comms prints this in the footer, so the reader can turn this mail
+        // off from the mail itself.
+        manage_link: "https://haruspex.test/account",
         data: {
           competition_id: 3,
           competition_name: "Office Pool",

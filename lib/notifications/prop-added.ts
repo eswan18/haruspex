@@ -5,7 +5,10 @@ import type { Kysely } from "kysely";
 import type { NewPropAudience } from "@/lib/competition-status";
 import { withRLS } from "@/lib/db-helpers";
 import { logger } from "@/lib/logger";
-import { notificationEnabled } from "@/lib/notifications/preferences";
+import {
+  manageLink,
+  notificationEnabled,
+} from "@/lib/notifications/preferences";
 import { publishEvent, type NotifyTarget } from "@/lib/pubsub/client";
 import type { Database } from "@/types/db_types";
 
@@ -102,6 +105,7 @@ export async function announcePropAdded({
         correlation_id: correlationId,
         notify: [recipient],
         notify_link: `${process.env.APP_BASE_URL}/competitions/${competition.id}/props/${prop.id}`,
+        manage_link: manageLink("competition.prop_added"),
         data: {
           competition_id: competition.id,
           competition_name: competition.name,

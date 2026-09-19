@@ -9,7 +9,10 @@ import {
 import { getUserFromCookies } from "../get-user";
 import { revalidatePath } from "next/cache";
 import { logger } from "@/lib/logger";
-import { notificationEnabled } from "@/lib/notifications/preferences";
+import {
+  manageLink,
+  notificationEnabled,
+} from "@/lib/notifications/preferences";
 import { publishEvent } from "@/lib/pubsub/client";
 import {
   ServerActionResult,
@@ -592,6 +595,7 @@ export async function addCompetitionMemberById({
           timestamp: new Date().toISOString(),
           notify: [{ email: userToAdd.email, name: userToAdd.name }],
           notify_link: `${process.env.APP_BASE_URL}/competitions/${competitionId}`,
+          manage_link: manageLink("competition.member_added"),
           data: {
             competition_name: competition.name,
             competition_id: competitionId,

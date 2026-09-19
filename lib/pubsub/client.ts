@@ -25,6 +25,13 @@ export interface BaseEvent {
   correlation_id?: string;
   notify?: NotifyTarget[];
   notify_link?: string;
+  /**
+   * Where the reader turns this mail off — the account page. Set it for mail
+   * a reader can turn off and leave it unset for the rest: comms prints a
+   * "Manage notifications" link in the footer when it is there, and mail with
+   * no setting behind it must not offer one. `manageLink()` answers both.
+   */
+  manage_link?: string;
   data: Record<string, unknown>;
 }
 
