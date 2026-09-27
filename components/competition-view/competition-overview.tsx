@@ -57,6 +57,14 @@ const variantCss = `
 .hxc .tally .fig.clear { color: var(--ink-muted); }
 .hxc .tally .cap { color: var(--ink-muted); font-size: 0.9375rem; }
 
+/* two asides can share a kicker: grouped, so the flex row puts them together
+   at the end rather than spreading them across the rule. Matches .hxp. */
+.hxc h2.kicker .asides {
+  display: flex;
+  align-items: baseline;
+  gap: 1.25rem;
+}
+
 /* what you owe, as a numbered docket */
 .hxc ol.docket { list-style: none; margin: 0; padding: 1.75rem 0 0; }
 .hxc ol.docket li {
@@ -102,6 +110,7 @@ export function CompetitionOverview({
   currentUserId,
   now,
   showMembers = false,
+  newPropHref,
 }: {
   data: CompetitionViewData;
   currentUserId: number;
@@ -109,6 +118,11 @@ export function CompetitionOverview({
   now: Date;
   /** Private competitions carry a membership list; public ones don't. */
   showMembers?: boolean;
+  /**
+   * Where this reader writes a prop, or undefined if they may not. Decided by
+   * `canCreateProps` on the server — the same rule the route itself enforces.
+   */
+  newPropHref?: string;
 }) {
   const { counts, owed, standings } = data;
 
@@ -187,14 +201,26 @@ export function CompetitionOverview({
           <section>
             <h2 className="kicker first">
               Outstanding
-              {counts.open > 0 && (
-                <Link
-                  className="aside"
-                  href={`/competitions/${data.id}/props/open`}
-                >
-                  All {counts.open} open →
-                </Link>
-              )}
+              <span className="asides">
+                {/* Shown on the reader's power to write one, never on the
+                    count: this used to hang off the open-props page, which is
+                    itself only linked when something is open — so a
+                    competition with nothing in it yet offered its own admin no
+                    way to write the first prop. */}
+                {newPropHref && (
+                  <Link className="aside" href={newPropHref}>
+                    Write a prop →
+                  </Link>
+                )}
+                {counts.open > 0 && (
+                  <Link
+                    className="aside"
+                    href={`/competitions/${data.id}/props/open`}
+                  >
+                    All {counts.open} open →
+                  </Link>
+                )}
+              </span>
             </h2>
 
             <div className="figure tally">

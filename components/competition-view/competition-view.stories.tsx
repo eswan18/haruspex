@@ -4,6 +4,7 @@ import { CompetitionOverview } from "./competition-overview";
 import {
   CURRENT_USER_ID,
   NOW,
+  emptyPrivateSeason,
   finalSeason,
   midSeason,
   preSeason,
@@ -37,3 +38,33 @@ export const Final: Story = { args: { data: finalSeason, ...shared } };
 
 /** A two-person private group — the smallest field the layout has to hold. */
 export const SmallPrivate: Story = { args: { data: privateSeason, ...shared } };
+
+/**
+ * A writer's view: the kicker offers the way to the form. Shown on the
+ * reader's power to write a prop, never on the number of open ones.
+ */
+export const CanWriteProps: Story = {
+  args: {
+    data: privateSeason,
+    ...shared,
+    newPropHref: "/competitions/12/props/new",
+  },
+};
+
+/**
+ * The case this link exists for: an empty private competition, seen by its
+ * admin. With no open props there is no open-props link to carry the form, so
+ * without this the admin has no way to write the first prop.
+ */
+export const EmptyButWritable: Story = {
+  args: {
+    data: emptyPrivateSeason,
+    ...shared,
+    newPropHref: "/competitions/13/props/new",
+  },
+};
+
+/** The same empty competition to a forecaster, who may not write one. */
+export const EmptyAndReadOnly: Story = {
+  args: { data: emptyPrivateSeason, ...shared },
+};

@@ -124,3 +124,18 @@ export const privateSeason: CompetitionViewData = {
     { userId: 9, userName: "Ethan Swan", score: 0.171, incomplete: false },
   ],
 };
+
+/**
+ * A private competition with nothing in it yet — the state that had no way
+ * forward. Every other link to the new-prop form sits behind a non-empty prop
+ * list, so its own admin could not write the first one.
+ */
+export const emptyPrivateSeason: CompetitionViewData = {
+  ...privateSeason,
+  id: 13,
+  name: "New Group",
+  counts: { toForecast: 0, open: 0, unresolved: 0, resolved: 0, total: 0 },
+  you: null,
+  owed: [],
+  standings: [],
+};
