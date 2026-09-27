@@ -1264,7 +1264,9 @@
 }
 .hxf .choose label {
   display: grid;
-  grid-template-columns: 0.75rem minmax(0, 1fr);
+  /* max-content, not a fixed 0.75rem: a checkbox is larger than a radio, and
+     the column should follow the mark rather than the mark the column. */
+  grid-template-columns: max-content minmax(0, 1fr);
   gap: 0 0.75rem;
   align-items: baseline;
   cursor: pointer;
@@ -1284,6 +1286,42 @@
 .hxf .choose input:checked {
   background: var(--ink);
   border-color: var(--ink);
+}
+/* A checkbox says yes or no on its own, with no sibling to be read against, so
+   a filled square is not enough — filled against what? It carries a mark: an X
+   knocked out of the ink, the way a box is marked on paper. A radio keeps the
+   plain fill, since its group's other cells are the contrast.
+   Two gradients rather than an SVG data URI: a data URI cannot read
+   var(--paper), and hard-coding it would mean one copy per edition to drift. */
+.hxf .choose input[type="checkbox"] {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+.hxf .choose input[type="checkbox"]:checked {
+  background-color: var(--ink);
+  background-image:
+    linear-gradient(
+      45deg,
+      transparent 44%,
+      var(--paper) 44%,
+      var(--paper) 56%,
+      transparent 56%
+    ),
+    linear-gradient(
+      -45deg,
+      transparent 44%,
+      var(--paper) 44%,
+      var(--paper) 56%,
+      transparent 56%
+    );
+  /* Each diagonal is painted into a centred 62% box, which does both jobs at
+     once: it holds the X off the corners, and it thins the strokes, since the
+     12% band is measured across that smaller box rather than the whole
+     square. At 14px that lands the stroke near 1.5px — between the hairline
+     and the 2px section rule. no-repeat, or the gradients tile. */
+  background-size: 62% 62%;
+  background-position: center;
+  background-repeat: no-repeat;
 }
 .hxf .choose input:focus-visible {
   outline: 2px solid var(--red);
