@@ -93,7 +93,11 @@ describe("resolveNewPropAudience against the database", () => {
       );
 
       expect(recipients).toEqual(
-        [coAdmin, forecaster].map((u) => ({ email: u.email, name: u.name })),
+        [coAdmin, forecaster].map((u) => ({
+          id: u.id,
+          email: u.email,
+          name: u.name,
+        })),
       );
     },
   );
@@ -128,7 +132,7 @@ describe("resolveNewPropAudience against the database", () => {
       );
 
       expect(recipients).toEqual([
-        { email: stillIn.email, name: stillIn.name },
+        { id: stillIn.id, email: stillIn.email, name: stillIn.name },
       ]);
     },
   );

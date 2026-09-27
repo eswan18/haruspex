@@ -13,6 +13,7 @@ import {
   manageLink,
   notificationEnabled,
 } from "@/lib/notifications/preferences";
+import { unsubscribeLinks } from "@/lib/notifications/unsubscribe-token";
 import { publishEvent } from "@/lib/pubsub/client";
 import {
   ServerActionResult,
@@ -589,11 +590,22 @@ export async function addCompetitionMemberById({
       // Notify the added user (fire-and-forget, only for private competitions,
       // and only if they have not turned these off)
       if (competition?.is_private && userToAdd.wants_email) {
+        const memberAddedLinks = unsubscribeLinks(
+          userToAdd.id,
+          "competition.member_added",
+        );
         publishEvent({
           event_type: "competition.member_added",
           source: "haruspex",
           timestamp: new Date().toISOString(),
-          notify: [{ email: userToAdd.email, name: userToAdd.name }],
+          notify: [
+            {
+              email: userToAdd.email,
+              name: userToAdd.name,
+              unsubscribe_url: memberAddedLinks.page,
+              unsubscribe_post_url: memberAddedLinks.post,
+            },
+          ],
           notify_link: `${process.env.APP_BASE_URL}/competitions/${competitionId}`,
           manage_link: manageLink("competition.member_added"),
           data: {

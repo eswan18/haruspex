@@ -98,7 +98,13 @@ This codebase follows a structured server action pattern that returns results in
   everyone else follows the default, so **changing a default moves the
   undecided** — `types.test.ts` is the tripwire, and says what to do about it.
   Filtering happens in haruspex at the point of publishing, via
-  `notificationEnabled()`; comms knows nothing about preferences.
+  `notificationEnabled()`; comms knows nothing about preferences. Each
+  recipient also gets an HMAC-signed unsubscribe link (no expiry, no session,
+  one reader and one type — `lib/notifications/unsubscribe-token.ts`). It comes
+  in two forms, and the difference matters: `/unsubscribe` only **asks**, and
+  is what the footer prints, because scanners and prefetchers follow links in
+  mail; `POST /api/unsubscribe` **acts**, and is what a mail client's own
+  one-click button uses (RFC 8058).
 
 ### Local Development Setup
 

@@ -84,6 +84,7 @@ describe("addCompetitionMemberById against the database", () => {
       const competition = await privateCompetitionRunBy(admin.id);
       vi.mocked(getUserFromCookies).mockResolvedValue(admin as never);
       vi.stubEnv("APP_BASE_URL", "https://haruspex.test");
+      vi.stubEnv("JWT_SECRET", "test-secret");
 
       const result = await addCompetitionMemberById({
         competitionId: competition.id,
@@ -96,7 +97,19 @@ describe("addCompetitionMemberById against the database", () => {
       expect(publishEvent).toHaveBeenCalledWith(
         expect.objectContaining({
           event_type: "competition.member_added",
-          notify: [{ email: newcomer.email, name: newcomer.name }],
+          notify: [
+            {
+              email: newcomer.email,
+              name: newcomer.name,
+              // Their own token: one reader, one notification.
+              unsubscribe_url: expect.stringContaining(
+                `t=${newcomer.id}%3Acompetition.member_added%3A`,
+              ),
+              unsubscribe_post_url: expect.stringContaining(
+                "/api/unsubscribe?t=",
+              ),
+            },
+          ],
           // The footer's way back to the setting that silences this.
           manage_link: "https://haruspex.test/account",
         }),
