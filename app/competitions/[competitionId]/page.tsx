@@ -1,6 +1,10 @@
 import { getCompetitionScores } from "@/lib/db_actions";
 import { getPropsWithUserForecasts } from "@/lib/db_actions/forecasts";
-import { getMemberCount } from "@/lib/db_actions/competition-members";
+import {
+  getCurrentUserRole,
+  getMemberCount,
+} from "@/lib/db_actions/competition-members";
+import { canCreateProps } from "@/lib/prop-write-access";
 import ErrorPage from "@/components/pages/error-page";
 import { buildViewData } from "@/components/competition-view/build-view-data";
 import { CompetitionOverview } from "@/components/competition-view/competition-overview";
@@ -20,13 +24,18 @@ export default async function Page({
   const { competition, user } = access;
   const competitionId = competition.id;
 
-  const [scoresResult, propsResult, memberCountResult] = await Promise.all([
-    getCompetitionScores({ competitionId }),
-    getPropsWithUserForecasts({ userId: user.id, competitionId }),
-    competition.is_private
-      ? getMemberCount(competitionId)
-      : Promise.resolve(null),
-  ]);
+  const [scoresResult, propsResult, memberCountResult, roleResult] =
+    await Promise.all([
+      getCompetitionScores({ competitionId }),
+      getPropsWithUserForecasts({ userId: user.id, competitionId }),
+      competition.is_private
+        ? getMemberCount(competitionId)
+        : Promise.resolve(null),
+      // `access.isAdmin` consults the membership role only for private
+      // competitions; writing a prop is a competition-admin power in one and a
+      // site-admin power in the other, so ask for the role itself.
+      getCurrentUserRole(competitionId),
+    ]);
 
   if (!scoresResult.success) return <ErrorPage title={scoresResult.error} />;
   if (!propsResult.success) return <ErrorPage title={propsResult.error} />;
@@ -48,12 +57,26 @@ export default async function Page({
     now,
   });
 
+  // The same rule the new-prop route enforces, asked here so the overview can
+  // offer the way in. It is the overview's job because every other link to that
+  // form sits behind a non-empty prop list, which a new competition has not got.
+  const canWriteProps = canCreateProps({
+    isPrivate: competition.is_private,
+    role: roleResult.success ? roleResult.data : null,
+    isSiteAdmin: user.is_admin,
+  });
+
   return (
     <CompetitionOverview
       data={data}
       currentUserId={user.id}
       now={now}
       showMembers={competition.is_private}
+      newPropHref={
+        canWriteProps
+          ? `/competitions/${competitionId}/props/new`
+          : undefined
+      }
     />
   );
 }
