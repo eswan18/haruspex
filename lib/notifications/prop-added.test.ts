@@ -14,8 +14,10 @@ vi.mock("@/lib/pubsub/client", () => ({
 
 import { announcePropAdded } from "./prop-added";
 
-const alice = { email: "alice@example.com", name: "Alice" };
-const bob = { email: "bob@example.com", name: "Bob" };
+// The resolver carries ids so a per-reader unsubscribe token can be signed;
+// only the address and name reach the event.
+const alice = { id: 11, email: "alice@example.com", name: "Alice" };
+const bob = { id: 12, email: "bob@example.com", name: "Bob" };
 
 /** A transaction whose member query returns `rows`, whatever it is asked. */
 function trxReturning(rows: unknown[]) {
@@ -54,6 +56,7 @@ describe("announcePropAdded", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubEnv("APP_BASE_URL", "https://haruspex.test");
+    vi.stubEnv("JWT_SECRET", "test-secret");
     vi.mocked(pubsub.publishEvent).mockResolvedValue("msg-mock");
   });
 
@@ -64,8 +67,30 @@ describe("announcePropAdded", () => {
 
     expect(pubsub.publishEvent).toHaveBeenCalledTimes(2);
     const events = vi.mocked(pubsub.publishEvent).mock.calls.map((c) => c[0]);
-    // One target each, so a failed send retries only its own recipient.
-    expect(events.map((e) => e.notify)).toEqual([[alice], [bob]]);
+    // One target each, so a failed send retries only its own recipient. The
+    // id is stripped: comms is given an address, not a user.
+    expect(events.map((e) => e.notify)).toEqual([
+      [
+        {
+          email: alice.email,
+          name: alice.name,
+          unsubscribe_url: expect.stringContaining(
+            "https://haruspex.test/unsubscribe?t=11%3Acompetition.prop_added%3A",
+          ),
+          unsubscribe_post_url: expect.stringContaining(
+            "https://haruspex.test/api/unsubscribe?t=11%3Acompetition.prop_added%3A",
+          ),
+        },
+      ],
+      [
+        {
+          email: bob.email,
+          name: bob.name,
+          unsubscribe_url: expect.stringContaining("t=12%3A"),
+          unsubscribe_post_url: expect.stringContaining("t=12%3A"),
+        },
+      ],
+    ]);
     for (const event of events) {
       expect(event).toMatchObject({
         event_type: "competition.prop_added",

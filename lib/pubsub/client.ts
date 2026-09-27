@@ -11,6 +11,18 @@ function requiredEnv(name: string): string {
 export interface NotifyTarget {
   email: string;
   name: string;
+  /**
+   * Where this reader turns this notification off. Per recipient, because the
+   * token in each names that reader — which is why these events go out one
+   * recipient at a time.
+   *
+   * Two links for one token: `unsubscribe_url` is the footer's visible link
+   * and only asks, since scanners follow links; `unsubscribe_post_url` is what
+   * a mail client's own unsubscribe button POSTs to (RFC 8058), and acts.
+   * Both absent on mail that cannot be turned off.
+   */
+  unsubscribe_url?: string;
+  unsubscribe_post_url?: string;
 }
 
 export interface BaseEvent {

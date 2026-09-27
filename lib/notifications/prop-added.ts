@@ -9,13 +9,20 @@ import {
   manageLink,
   notificationEnabled,
 } from "@/lib/notifications/preferences";
+import { unsubscribeLinks } from "@/lib/notifications/unsubscribe-token";
 import { publishEvent, type NotifyTarget } from "@/lib/pubsub/client";
 import type { Database } from "@/types/db_types";
+
+/**
+ * A recipient, with the id the unsubscribe token needs. The id is stripped
+ * before the event goes out: comms needs an address, not a user.
+ */
+export type Recipient = NotifyTarget & { id: number };
 
 type AudienceResolver = (
   db: Kysely<Database>,
   scope: { competitionId: number; authorId: number },
-) => Promise<NotifyTarget[]>;
+) => Promise<Recipient[]>;
 
 /**
  * How each kind of `NewPropAudience` becomes a list of people.
@@ -31,7 +38,7 @@ const resolvers: Record<NewPropAudience, AudienceResolver> = {
     db
       .selectFrom("competition_members")
       .innerJoin("users", "users.id", "competition_members.user_id")
-      .select(["users.email", "users.name"])
+      .select(["users.id", "users.email", "users.name"])
       .where("competition_members.competition_id", "=", competitionId)
       .where("users.deactivated_at", "is", null)
       .where("users.id", "!=", authorId)
@@ -45,7 +52,7 @@ export function resolveNewPropAudience(
   db: Kysely<Database>,
   audience: NewPropAudience,
   scope: { competitionId: number; authorId: number },
-): Promise<NotifyTarget[]> {
+): Promise<Recipient[]> {
   return resolvers[audience](db, scope);
 }
 
@@ -81,7 +88,7 @@ export async function announcePropAdded({
     audience,
   };
 
-  let recipients: NotifyTarget[];
+  let recipients: Recipient[];
   try {
     // As the author, under RLS: the same view of the membership they had when
     // they added the prop.
@@ -97,13 +104,20 @@ export async function announcePropAdded({
   }
 
   const results = await Promise.allSettled(
-    recipients.map((recipient) =>
-      publishEvent({
+    recipients.map(({ id, ...recipient }) => {
+      const links = unsubscribeLinks(id, "competition.prop_added");
+      return publishEvent({
         event_type: "competition.prop_added",
         source: "haruspex",
         timestamp: new Date().toISOString(),
         correlation_id: correlationId,
-        notify: [recipient],
+        notify: [
+          {
+            ...recipient,
+            unsubscribe_url: links.page,
+            unsubscribe_post_url: links.post,
+          },
+        ],
         notify_link: `${process.env.APP_BASE_URL}/competitions/${competition.id}/props/${prop.id}`,
         manage_link: manageLink("competition.prop_added"),
         data: {
@@ -113,8 +127,8 @@ export async function announcePropAdded({
           prop_text: prop.text,
           forecasts_due_date: prop.forecasts_due_date?.toISOString() ?? null,
         },
-      }),
-    ),
+      });
+    }),
   );
 
   const failed = results.filter((r) => r.status === "rejected");
