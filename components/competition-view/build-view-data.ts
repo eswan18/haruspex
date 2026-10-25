@@ -104,6 +104,7 @@ export function buildViewData({
     competition.forecasts_open_date,
     competition.forecasts_close_date,
     competition.end_date,
+    now,
   );
 
   return {
