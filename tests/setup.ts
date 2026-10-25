@@ -1,5 +1,5 @@
-import { afterEach } from "vitest";
-import { getCurrentTest } from "@vitest/runner";
+import { afterEach, TestRunner } from "vitest";
+const getCurrentTest = TestRunner.getCurrentTest;
 
 // Only setup testcontainers if Docker is available and TEST_USE_CONTAINERS is true
 const useContainers = process.env.TEST_USE_CONTAINERS === "true";

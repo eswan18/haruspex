@@ -1,4 +1,6 @@
-import { getCurrentTest } from "@vitest/runner";
+import { TestRunner } from "vitest";
+
+const getCurrentTest = TestRunner.getCurrentTest;
 
 /**
  * Represents a single tracked database insert.
