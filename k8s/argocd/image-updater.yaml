@@ -6,7 +6,6 @@ metadata:
   name: haruspex-staging
   namespace: argocd
 spec:
-  namespace: argocd
   writeBackConfig:
     method: argocd
   applicationRefs:
