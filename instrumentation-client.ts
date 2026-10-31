@@ -8,7 +8,10 @@ import { parseSampleRate } from "./lib/sentry-utils";
 const defaultTraceRate = process.env.NODE_ENV === "production" ? 0.2 : 1;
 
 Sentry.init({
-  dsn: process.env.SENTRY_DSN || undefined,
+  // NEXT_PUBLIC_, not the runtime SENTRY_DSN the server reads: only
+  // NEXT_PUBLIC_* is inlined into browser code, at build time (see Dockerfile).
+  // Unset in local dev, which leaves the browser client off there.
+  dsn: process.env.NEXT_PUBLIC_SENTRY_DSN || undefined,
 
   // Add optional integrations for additional features
   integrations: [Sentry.replayIntegration()],
