@@ -21,6 +21,13 @@ ENV SENTRY_AUTH_TOKEN=$SENTRY_AUTH_TOKEN
 ENV SENTRY_RELEASE=$SENTRY_RELEASE
 ENV SENTRY_VERBOSE=$SENTRY_VERBOSE
 
+# The browser's Sentry DSN. Next.js inlines only NEXT_PUBLIC_* variables into
+# client code, at build time, so the runtime SENTRY_DSN in the configmaps never
+# reached the browser and client-side Sentry (errors, replays, bug reports) was
+# silently off. A DSN is public by design -- every visitor's browser holds it --
+# and staging and prod share this one, so it is baked into the one image.
+ENV NEXT_PUBLIC_SENTRY_DSN="https://42fb7fde7d5842831f2324ed33c7f50f@o4509062063587328.ingest.us.sentry.io/4509062066012160"
+
 # Dummy values for build — Next.js evaluates server-side modules during page
 # data collection, but doesn't actually connect to anything.
 ENV DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy"

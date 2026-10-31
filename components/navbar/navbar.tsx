@@ -8,6 +8,7 @@ import {
   NavigationMenuList,
 } from "@/components/ui/navigation-menu";
 
+import { BugReportButton } from "@/components/bug-report/bug-report-button";
 import ThemeToggle from "./theme-toggle";
 import { UserStatus } from "./user-status";
 import Link from "next/link";
@@ -255,6 +256,7 @@ export default function NavBar() {
         {/* Right side actions */}
         <div className="flex items-center gap-3">
           <UserStatus />
+          {user && <BugReportButton user={user} />}
           <ThemeToggle />
         </div>
       </div>
