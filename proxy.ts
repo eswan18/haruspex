@@ -20,6 +20,12 @@ const PUBLIC_ROUTES = [
   // POST never carries cookies, and the login redirect drops the `?t=` token.
   "/unsubscribe",
   "/api/unsubscribe",
+  // The Sentry tunnel (`tunnelRoute` in next.config.mjs): it only forwards
+  // browser telemetry to Sentry, which authenticates it by DSN. Behind login,
+  // any report sent without a usable session cookie (signed-out crashes, and
+  // Safari's keepalive requests) was redirected to /login, and the SDK read
+  // the login page's 200 as success: bug reports said "sent" and vanished.
+  "/monitoring",
 ];
 
 const REFRESH_BUFFER_SEC = 60;
