@@ -36,6 +36,7 @@ import {
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useFeatureFlag } from "@/hooks/useFeatureFlag";
 import { getCompetitions } from "@/lib/db_actions/competitions";
+import { settleAction } from "@/lib/thrown-error";
 import { Competition } from "@/types/db_types";
 import { getCompetitionStatusFromObject } from "@/lib/competition-status";
 import { NavLink, NavLinkGroup, NavLinkSection } from "./nav-types";
@@ -52,9 +53,12 @@ export default function NavBar() {
 
   useEffect(() => {
     if (!isLoading) {
-      getCompetitions().then((result) => {
+      // Settled: a background load that cannot reach the server (signed out,
+      // connection dropped) leaves the menu as it was rather than throwing an
+      // unhandled rejection on every page (Sentry HARUSPEX-APP-B6, B9).
+      settleAction(getCompetitions).then((result) => {
         if (!result.success) {
-          console.error("Failed to load competitions:", result.error);
+          console.warn("Failed to load competitions:", result.error);
           return;
         }
         const allCompetitions = result.data;

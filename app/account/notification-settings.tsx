@@ -5,6 +5,7 @@ import { useState } from "react";
 import { SettingToggle } from "@/components/setting-toggle/setting-toggle";
 import { useToast } from "@/hooks/use-toast";
 import { setNotificationPreference } from "@/lib/db_actions";
+import { settleAction } from "@/lib/thrown-error";
 import type { EffectivePreferences } from "@/lib/notifications/preferences";
 import {
   NOTIFICATIONS,
@@ -105,7 +106,12 @@ export function NotificationSettings({
     setValues((current) => ({ ...current, [type]: enabled }));
     setPending(type);
 
-    const result = await setNotificationPreference({ type, enabled });
+    // Settled, so a dropped connection or an expired session lands in the
+    // refusal below (value put back, toast) instead of leaving the switch
+    // stuck in its busy ink.
+    const result = await settleAction(() =>
+      setNotificationPreference({ type, enabled }),
+    );
 
     setPending(null);
     if (!result.success) {

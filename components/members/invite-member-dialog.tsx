@@ -33,6 +33,7 @@ import {
   getEligibleMembers,
   type CompetitionRole,
 } from "@/lib/db_actions/competition-members";
+import { settleAction } from "@/lib/thrown-error";
 
 interface EligibleUser {
   id: number;
@@ -74,7 +75,11 @@ export function InviteMemberDialog({
     if (!isOpen) return;
     startLoadingUsers(async () => {
       setEligibleUsersError(null);
-      const result = await getEligibleMembers(competitionId);
+      // Settled, as in MembersPanel: a throw in a transition would take the
+      // page down with it rather than show in the dialog.
+      const result = await settleAction(() =>
+        getEligibleMembers(competitionId),
+      );
       if (result.success) {
         setEligibleUsers(result.data);
       } else {

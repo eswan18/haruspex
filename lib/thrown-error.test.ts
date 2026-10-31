@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   describeThrownError,
   isSignedOutError,
+  NETWORK_MESSAGE,
+  settleAction,
   SIGNED_OUT_MESSAGE,
   STALE_PAGE_MESSAGE,
 } from "./thrown-error";
@@ -37,5 +39,44 @@ describe("isSignedOutError", () => {
   it("ignores anything else", () => {
     expect(isSignedOutError(new Error("Network down"))).toBe(false);
     expect(isSignedOutError(SIGNED_OUT_MESSAGE)).toBe(false);
+  });
+});
+
+describe("describeThrownError, for a dropped connection", () => {
+  it.each([
+    "Load failed", // Safari
+    "Failed to fetch", // Chrome
+    "NetworkError when attempting to fetch resource.", // Firefox
+  ])("translates the browser's %s", (message) => {
+    expect(describeThrownError(new TypeError(message))).toBe(NETWORK_MESSAGE);
+  });
+
+  it("leaves a TypeError that is a bug, not the network, alone", () => {
+    expect(describeThrownError(new TypeError("x is not a function"))).toBe(
+      "x is not a function",
+    );
+  });
+});
+
+describe("settleAction", () => {
+  it("passes a returned result through", async () => {
+    await expect(
+      settleAction(async () => ({ success: true as const, data: 3 })),
+    ).resolves.toEqual({ success: true, data: 3 });
+  });
+
+  it("turns a throw into a failed result instead of a rejection", async () => {
+    const result = await settleAction(async () => {
+      throw new Error(SIGNED_OUT_MESSAGE);
+    });
+    expect(result.success).toBe(false);
+    expect(!result.success && result.error).toBe(SIGNED_OUT_MESSAGE);
+  });
+
+  it("describes a dropped connection", async () => {
+    const result = await settleAction(async () => {
+      throw new TypeError("Load failed");
+    });
+    expect(!result.success && result.error).toBe(NETWORK_MESSAGE);
   });
 });
