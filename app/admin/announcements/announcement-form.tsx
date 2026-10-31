@@ -28,6 +28,7 @@ import {
   getAnnouncementAudienceSize,
   sendAnnouncement,
 } from "@/lib/db_actions/admin-announcement";
+import { describeThrownError } from "@/lib/thrown-error";
 
 const formSchema = z
   .object({
@@ -144,7 +145,7 @@ export default function AnnouncementForm() {
       setConfirming(null);
       router.push("/admin");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setError(describeThrownError(err));
     } finally {
       setBusy(null);
     }
@@ -163,7 +164,7 @@ export default function AnnouncementForm() {
       setAudience(result.data);
       setConfirming(values);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setError(describeThrownError(err));
     } finally {
       setBusy(null);
     }

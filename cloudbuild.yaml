@@ -10,6 +10,9 @@ availableSecrets:
   secretManager:
     - versionName: projects/ethans-services/secrets/forecasting_sentry_auth_token/versions/latest
       env: 'SENTRY_AUTH_TOKEN'
+    # Pins server action IDs across builds; see the Dockerfile.
+    - versionName: projects/ethans-services/secrets/haruspex_server_actions_encryption_key/versions/latest
+      env: 'NEXT_SERVER_ACTIONS_ENCRYPTION_KEY'
 
 steps:
   # Single environment-agnostic image, consumed by both staging and prod.
@@ -31,7 +34,8 @@ steps:
           --build-arg SENTRY_AUTH_TOKEN=$$SENTRY_AUTH_TOKEN \
           --build-arg SENTRY_RELEASE=${SHORT_SHA} \
           --build-arg SENTRY_VERBOSE=1 \
+          --build-arg NEXT_SERVER_ACTIONS_ENCRYPTION_KEY=$$NEXT_SERVER_ACTIONS_ENCRYPTION_KEY \
           -t ${_IMAGE}:${SHORT_SHA} \
           --push \
           .
-    secretEnv: ['SENTRY_AUTH_TOKEN']
+    secretEnv: ['SENTRY_AUTH_TOKEN', 'NEXT_SERVER_ACTIONS_ENCRYPTION_KEY']

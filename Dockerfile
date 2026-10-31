@@ -21,6 +21,14 @@ ENV SENTRY_AUTH_TOKEN=$SENTRY_AUTH_TOKEN
 ENV SENTRY_RELEASE=$SENTRY_RELEASE
 ENV SENTRY_VERBOSE=$SENTRY_VERBOSE
 
+# Next salts every server action's ID with this key. Left unset it is random
+# per build, so each deploy renamed every action and a page loaded before the
+# rollout failed on submit with "Server Action ... was not found on the
+# server". Pinned, an action keeps its ID until it is renamed or its arguments
+# change. Empty (preview builds) means a random key, which is fine there.
+ARG NEXT_SERVER_ACTIONS_ENCRYPTION_KEY
+ENV NEXT_SERVER_ACTIONS_ENCRYPTION_KEY=$NEXT_SERVER_ACTIONS_ENCRYPTION_KEY
+
 # The browser's Sentry DSN. Next.js inlines only NEXT_PUBLIC_* variables into
 # client code, at build time, so the runtime SENTRY_DSN in the configmaps never
 # reached the browser and client-side Sentry (errors, replays, bug reports) was
