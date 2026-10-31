@@ -44,6 +44,16 @@ export const NOTIFICATIONS = {
     description:
       "When a prop is added to a competition of yours that opens each prop on its own deadline.",
   },
+  // An admin writing to every active user at once, from /admin/announcements.
+  // Unlike the one-to-one message it is not meant for this reader alone, so
+  // they may turn it off.
+  "admin.announcement": {
+    optional: true,
+    default: true,
+    label: "Announcements",
+    description:
+      "Occasional messages to everyone on Haruspex, like the yearly call for prop ideas.",
+  },
   // One person writing to another from the admin Users page. Muting it would
   // silently eat a message meant for this reader alone, so it cannot be.
   "admin.manual_email": { optional: false },

@@ -18,6 +18,11 @@ const ADMIN_SECTIONS: AdminSection[] = [
     description: "Create competitions and review their props and resolutions.",
   },
   {
+    href: "/admin/announcements",
+    title: "Announcements",
+    description: "Email every active user at once.",
+  },
+  {
     href: "/admin/feature-flags",
     title: "Feature Flags",
     description: "Toggle features globally or for individual users.",
@@ -37,7 +42,7 @@ const ADMIN_SECTIONS: AdminSection[] = [
 /**
  * The way in to everything an admin can do. It is an index and nothing else:
  * the description on each line is the only prose the page needs, so the lede
- * that used to repeat all five in one sentence is gone.
+ * that used to repeat them all in one sentence is gone.
  */
 export default function AdminIndexPage() {
   return (

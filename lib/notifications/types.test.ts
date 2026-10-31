@@ -28,6 +28,7 @@ describe("notification registry", () => {
     );
 
     expect(defaults).toEqual({
+      "admin.announcement": true,
       "competition.member_added": true,
       "competition.prop_added": true,
     });
