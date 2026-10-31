@@ -377,3 +377,47 @@ describe("proxy: a refresh failure that is not the IdP rejecting the grant", () 
     expect(res.cookies.get("refresh_token")).toBeUndefined();
   });
 });
+
+describe("proxy: a server action from a signed-out page", () => {
+  // A redirect would hand the action call the login page's HTML, which Next
+  // can only report as "An unexpected response was received from the
+  // server". A 401 with a text/plain body reaches the form as that text.
+  function actionRequest(cookieHeader = ""): NextRequest {
+    return new NextRequest("http://localhost/props/suggest", {
+      method: "POST",
+      headers: {
+        "next-action": "40abc",
+        ...(cookieHeader ? { cookie: cookieHeader } : {}),
+      },
+    });
+  }
+
+  it("answers 401 with the signed-out message when there is no token", async () => {
+    const { proxy } = await import("./proxy");
+    const { SIGNED_OUT_MESSAGE } = await import("@/lib/thrown-error");
+    const res = await proxy(actionRequest());
+    expect(res.status).toBe(401);
+    expect(res.headers.get("content-type")).toBe("text/plain");
+    expect(res.headers.get("location")).toBeNull();
+    expect(await res.text()).toBe(SIGNED_OUT_MESSAGE);
+  });
+
+  it("answers 401 and clears the cookies when the IdP rejects the grant", async () => {
+    mockRefreshAccessToken.mockRejectedValue(
+      new RefreshTokenRejectedError("invalid_grant"),
+    );
+    const { proxy } = await import("./proxy");
+    const res = await proxy(
+      actionRequest(`token=${EXPIRED_JWT}; refresh_token=rt`),
+    );
+    expect(res.status).toBe(401);
+    expect(res.cookies.get("token")?.value).toBe("");
+    expect(res.cookies.get("refresh_token")?.value).toBe("");
+  });
+
+  it("still redirects an ordinary page request", async () => {
+    const { proxy } = await import("./proxy");
+    const res = await proxy(makeRequest("/props/suggest"));
+    expect(res.status).toBe(307);
+  });
+});

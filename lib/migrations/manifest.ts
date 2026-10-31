@@ -53,5 +53,6 @@ export const MIGRATION_MANIFEST: readonly string[] = [
   "1788480000000_add-notes-to-suggested-props",
   "1788566400000_add-review-status-to-suggested-props",
   "1789775726531_notification-preferences",
+  "1793418140100_suggestions-start-undecided",
   "1793420000000_user-active-days",
 ];

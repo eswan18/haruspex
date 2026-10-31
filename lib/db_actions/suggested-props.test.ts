@@ -105,37 +105,42 @@ describe("Suggested Props Unit Tests", () => {
       vi.mocked(getUser.getUserFromCookies).mockResolvedValue(null);
 
       const result = await createSuggestedProp({
-        prop: { prop: "My suggestion", suggester_user_id: 1 },
+        prop: "My suggestion",
+        notes: null,
       });
 
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.code).toBe("UNAUTHORIZED");
       }
+      expect(dbHelpers.withRLS).not.toHaveBeenCalled();
     });
 
-    it("should reject suggestion for different user", async () => {
+    it("should refuse a claim that fails the server-side check", async () => {
       vi.mocked(getUser.getUserFromCookies).mockResolvedValue(mockUser as any);
 
       const result = await createSuggestedProp({
-        prop: { prop: "My suggestion", suggester_user_id: 999 }, // Different user
+        prop: "        ",
+        notes: null,
       });
 
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error).toBe("Unauthorized");
-        expect(result.code).toBe("UNAUTHORIZED");
+        expect(result.code).toBe("VALIDATION_ERROR");
+        expect(
+          "validationErrors" in result && result.validationErrors,
+        ).toMatchObject({ prop: [expect.any(String)] });
       }
+      expect(dbHelpers.withRLS).not.toHaveBeenCalled();
     });
 
-    it("should create suggestion for own user", async () => {
+    it("should insert as the session's user, trimmed and undecided", async () => {
       vi.mocked(getUser.getUserFromCookies).mockResolvedValue(mockUser as any);
 
       const mockTrx = {
         insertInto: vi.fn().mockReturnThis(),
         values: vi.fn().mockReturnThis(),
-        returning: vi.fn().mockReturnThis(),
-        executeTakeFirstOrThrow: vi.fn().mockResolvedValue({ id: 42 }),
+        execute: vi.fn().mockResolvedValue([]),
       };
 
       vi.mocked(dbHelpers.withRLS).mockImplementation(async (userId, fn) => {
@@ -143,14 +148,22 @@ describe("Suggested Props Unit Tests", () => {
       });
 
       const result = await createSuggestedProp({
-        prop: { prop: "My suggestion", suggester_user_id: 1 },
+        prop: "  My suggestion  ",
+        notes: "   ",
       });
 
       expect(result.success).toBe(true);
-      if (result.success) {
-        expect(result.data).toBe(42);
-      }
+      expect(dbHelpers.withRLS).toHaveBeenCalledWith(
+        mockUser.id,
+        expect.any(Function),
+      );
       expect(mockTrx.insertInto).toHaveBeenCalledWith("suggested_props");
+      // Exactly these columns: no status or decision can ride in.
+      expect(mockTrx.values).toHaveBeenCalledWith({
+        prop: "My suggestion",
+        notes: null,
+        suggester_user_id: mockUser.id,
+      });
     });
 
     it("should handle database errors", async () => {
@@ -160,7 +173,8 @@ describe("Suggested Props Unit Tests", () => {
       );
 
       const result = await createSuggestedProp({
-        prop: { prop: "My suggestion", suggester_user_id: 1 },
+        prop: "My suggestion",
+        notes: null,
       });
 
       expect(result.success).toBe(false);

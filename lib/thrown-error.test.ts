@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { describeThrownError, STALE_PAGE_MESSAGE } from "./thrown-error";
+import {
+  describeThrownError,
+  isSignedOutError,
+  SIGNED_OUT_MESSAGE,
+  STALE_PAGE_MESSAGE,
+} from "./thrown-error";
 
 describe("describeThrownError", () => {
   it("asks for a reload when the page predates a deploy", () => {
@@ -18,5 +23,19 @@ describe("describeThrownError", () => {
   it("falls back when what was thrown is not an Error", () => {
     expect(describeThrownError("nope")).toBe("Something went wrong.");
     expect(describeThrownError(undefined, "Oops")).toBe("Oops");
+  });
+});
+
+describe("isSignedOutError", () => {
+  it("recognises the proxy's signed-out answer", () => {
+    expect(isSignedOutError(new Error(SIGNED_OUT_MESSAGE))).toBe(true);
+    expect(describeThrownError(new Error(SIGNED_OUT_MESSAGE))).toBe(
+      SIGNED_OUT_MESSAGE,
+    );
+  });
+
+  it("ignores anything else", () => {
+    expect(isSignedOutError(new Error("Network down"))).toBe(false);
+    expect(isSignedOutError(SIGNED_OUT_MESSAGE)).toBe(false);
   });
 });
