@@ -7,6 +7,7 @@ import { useCallback, useState } from "react";
 import { sheetCss } from "@/components/prop-list/sheet";
 import { useToast } from "@/hooks/use-toast";
 import { createFeatureFlag, updateFeatureFlag } from "@/lib/db_actions";
+import { settleAction } from "@/lib/thrown-error";
 import type { VFeatureFlag } from "@/types/db_types";
 
 import { SettingToggle, toggleCss, useSettingSave } from "@/components/setting-toggle/setting-toggle";
@@ -144,11 +145,13 @@ function FeatureRow({
 
   const setDefault = (enabled: boolean) =>
     set(enabled, async () => {
-      const result = defaultFlag
-        ? await updateFeatureFlag({ id: defaultFlag.id, enabled })
-        : await createFeatureFlag({
-            featureFlag: { name: featureName, user_id: null, enabled },
-          });
+      const result = await settleAction<unknown>(() =>
+        defaultFlag
+          ? updateFeatureFlag({ id: defaultFlag.id, enabled })
+          : createFeatureFlag({
+              featureFlag: { name: featureName, user_id: null, enabled },
+            }),
+      );
       if (!result.success) {
         toast({
           title: "Error",

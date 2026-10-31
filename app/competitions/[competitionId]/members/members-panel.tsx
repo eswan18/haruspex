@@ -7,6 +7,7 @@ import { InviteMemberDialog } from "@/components/members";
 import { MembersSheet, membersCss } from "@/components/members/members-sheet";
 import { sheetCss } from "@/components/prop-list/sheet";
 import { getCompetitionMembers } from "@/lib/db_actions/competition-members";
+import { settleAction } from "@/lib/thrown-error";
 import type { VCompetitionMember } from "@/types/db_types";
 
 const ownCss = `
@@ -40,7 +41,11 @@ export function MembersPanel({
   const load = useCallback(() => {
     startLoading(async () => {
       setError(null);
-      const result = await getCompetitionMembers(competitionId);
+      // Settled: a throw inside a transition reaches the error boundary and
+      // replaces the page; a failed result shows in the panel instead.
+      const result = await settleAction(() =>
+        getCompetitionMembers(competitionId),
+      );
       if (result.success) setMembers(result.data);
       else setError(result.error);
     });

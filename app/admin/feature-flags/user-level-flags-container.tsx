@@ -8,6 +8,7 @@ import {
   getUsers,
   updateFeatureFlag,
 } from "@/lib/db_actions";
+import { settleAction } from "@/lib/thrown-error";
 import type { VFeatureFlag, VUser } from "@/types/db_types";
 
 import { SettingToggle, useSettingSave } from "@/components/setting-toggle/setting-toggle";
@@ -112,7 +113,9 @@ function UserFlagRow({
         busy={busy}
         onSet={(enabled) =>
           set(enabled, async () => {
-            const result = await updateFeatureFlag({ id: flag.id, enabled });
+            const result = await settleAction(() =>
+              updateFeatureFlag({ id: flag.id, enabled }),
+            );
             if (!result.success) {
               toast({
                 title: "Error",
@@ -153,7 +156,7 @@ function AddUserFlagRow({
 
   useEffect(() => {
     let live = true;
-    getUsers().then((result) => {
+    settleAction(getUsers).then((result) => {
       if (!live) return;
       if (result.success) {
         setUsers(result.data);
@@ -208,13 +211,15 @@ function AddUserFlagRow({
             selected
               ? (enabled) =>
                   set(enabled, async () => {
-                    const result = await createFeatureFlag({
+                    const result = await settleAction(() =>
+                      createFeatureFlag({
                       featureFlag: {
                         name: featureName,
                         user_id: selected.id,
                         enabled,
                       },
-                    });
+                    }),
+                    );
                     if (!result.success) {
                       toast({
                         title: "Error",
