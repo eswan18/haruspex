@@ -16,6 +16,7 @@ import {
   BarChartHorizontal,
   Flag,
   Medal,
+  Megaphone,
   MessageCircle,
   Target,
   User2,
@@ -127,6 +128,11 @@ export default function NavBar() {
       href: "/admin/competitions",
       label: "Competitions",
       icon: <Medal size={16} />,
+    },
+    {
+      href: "/admin/announcements",
+      label: "Announcements",
+      icon: <Megaphone size={16} />,
     },
     {
       href: "/admin/feature-flags",
