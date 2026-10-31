@@ -88,6 +88,24 @@ describe("proxy: unsubscribe links work without a session", () => {
   });
 });
 
+describe("proxy: the Sentry tunnel works without a session", () => {
+  // next.config.mjs routes the browser's Sentry traffic through /monitoring.
+  // Redirected to /login, a report is lost while the SDK reads the login
+  // page's 200 as success, so a bug report says "sent" and never arrives.
+  it("passes /monitoring through with no cookies", async () => {
+    const { proxy } = await import("./proxy");
+    const res = await proxy(
+      new NextRequest(
+        "http://localhost/monitoring?o=4509062063587328&p=4509062066012160",
+        { method: "POST", body: "{}" },
+      ),
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("location")).toBeNull();
+    expect(mockRefreshAccessToken).not.toHaveBeenCalled();
+  });
+});
+
 describe("proxy: protected routes with no token", () => {
 
   it("redirects to /login when no token cookie exists", async () => {
