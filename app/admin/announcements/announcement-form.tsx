@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
+import { EmailBodyField } from "@/components/email-body-field/email-body-field";
 import { Field, FormSheet, Refusal } from "@/components/form-sheet/form-sheet";
 import {
   Dialog,
@@ -192,20 +193,14 @@ export default function AnnouncementForm() {
           />
         </Field>
 
-        <Field
-          label="Message"
-          htmlFor={bodyId}
-          hint="Plain text. Line breaks are kept as you type them. Each email opens with “Hi {name},”."
-          count={[body.length, BODY_MAX_LENGTH]}
+        <EmailBodyField
+          id={bodyId}
+          value={body}
+          limit={BODY_MAX_LENGTH}
           error={errors.body?.message}
-        >
-          <textarea
-            id={bodyId}
-            rows={12}
-            placeholder="It's that time of year again…"
-            {...form.register("body")}
-          />
-        </Field>
+          registration={form.register("body")}
+          placeholder="Hello fellow forecasters,"
+        />
 
         <Field
           label="Button label"

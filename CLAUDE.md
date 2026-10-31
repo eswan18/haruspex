@@ -98,7 +98,10 @@ This codebase follows a structured server action pattern that returns results in
   everyone else follows the default, so **changing a default moves the
   undecided** — `types.test.ts` is the tripwire, and says what to do about it.
   Filtering happens in haruspex at the point of publishing, via
-  `notificationEnabled()`; comms knows nothing about preferences. Each
+  `notificationEnabled()`; comms knows nothing about preferences. The two
+  admin-written emails (announcement, one-to-one) are markdown, previewed here
+  by `lib/email-markdown.ts` and rendered by comms with the same parser and
+  options; keep the two in step. No greeting is merged in — the admin writes it. Each
   recipient also gets an HMAC-signed unsubscribe link (no expiry, no session,
   one reader and one type — `lib/notifications/unsubscribe-token.ts`). It comes
   in two forms, and the difference matters: `/unsubscribe` only **asks**, and
