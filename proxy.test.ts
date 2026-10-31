@@ -65,6 +65,29 @@ describe("proxy: public routes", () => {
   });
 });
 
+describe("proxy: unsubscribe links work without a session", () => {
+  // A mail client's one-click unsubscribe (RFC 8058) never carries cookies,
+  // and a reader clicking the footer link is often signed out.
+  it("passes the unsubscribe page through, token intact", async () => {
+    const { proxy } = await import("./proxy");
+    const res = await proxy(makeRequest("/unsubscribe?t=1%3Aa%3Ab"));
+    expect(res.status).toBe(200);
+    expect(res.headers.get("location")).toBeNull();
+  });
+
+  it("passes the one-click unsubscribe POST through", async () => {
+    const { proxy } = await import("./proxy");
+    const res = await proxy(
+      new NextRequest("http://localhost/api/unsubscribe?t=1%3Aa%3Ab", {
+        method: "POST",
+        body: "List-Unsubscribe=One-Click",
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("location")).toBeNull();
+  });
+});
+
 describe("proxy: protected routes with no token", () => {
 
   it("redirects to /login when no token cookie exists", async () => {
