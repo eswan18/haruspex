@@ -4,6 +4,9 @@ import { CompetitionStamp } from "@/components/competition-stamp/competition-sta
 import { LocalDate } from "@/components/local-date";
 import type { AdminStats } from "@/lib/admin-stats";
 
+import { ActiveUsersChart } from "./active-users-chart";
+import { BarChart } from "./bar-chart";
+
 /**
  * The admin Stats page, on the prop-list sheet (.hxp). Figures are mono and
  * tabular like every number in the app; sections open with the 2px ink rule
@@ -48,11 +51,8 @@ export const statsCss = `
 }
 .hxp .pair > section { flex: 1 1 28rem; min-width: 0; }
 
-.hxp .bars {
-  display: grid;
-  grid-template-columns: repeat(12, minmax(0, 1fr));
-  gap: 0.375rem;
-}
+/* Column count and gap are set inline by BarChart, from its number of bars. */
+.hxp .bars { display: grid; }
 .hxp .bars.plot {
   align-items: end;
   height: 12.5rem;
@@ -83,6 +83,25 @@ export const statsCss = `
   white-space: nowrap;
   overflow: hidden;
 }
+.hxp .chart-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding-top: 1.5rem;
+}
+.hxp .chart-head .aside {
+  font-family: var(--font-roboto-mono), ui-monospace, monospace;
+  font-size: 0.6875rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+.hxp .chart-head + .bars.plot { padding-top: 1.25rem; }
+/* With only every nth bar labelled, a label may spill into the unlabelled
+   columns either side of it rather than be cut to its own bar's width. */
+.hxp .bars.axis.sparse .lbl { overflow: visible; }
 .hxp .caption {
   margin: 0.75rem 0 0;
   font-size: 0.8125rem;
@@ -156,41 +175,6 @@ function count(value: number, one: string, many = `${one}s`): string {
   return `${value.toLocaleString("en-US")} ${value === 1 ? one : many}`;
 }
 
-function BarChart({
-  points,
-  label,
-  liveLast = false,
-}: {
-  points: { start: Date; count: number }[];
-  label: (d: Date) => string;
-  /** Ink the last bar red: its period is not over. */
-  liveLast?: boolean;
-}) {
-  const max = Math.max(1, ...points.map((p) => p.count));
-  return (
-    <>
-      <div className="bars plot" role="img" aria-label={points.map((p) => `${label(p.start)}: ${p.count}`).join(", ")}>
-        {points.map((p, i) => (
-          <div className="stack" key={p.start.toISOString()} aria-hidden="true">
-            <span className="n">{p.count}</span>
-            <div
-              className={liveLast && i === points.length - 1 ? "bar live" : "bar"}
-              style={{ height: `${(p.count / max) * 100}%` }}
-            />
-          </div>
-        ))}
-      </div>
-      <div className="bars axis" aria-hidden="true">
-        {points.map((p) => (
-          <span className="lbl" key={p.start.toISOString()}>
-            {label(p.start)}
-          </span>
-        ))}
-      </div>
-    </>
-  );
-}
-
 export function StatsSheet({ stats }: { stats: AdminStats }) {
   const { users, forecasts, props, competitions, suggestions } = stats;
   const figures = [
@@ -226,6 +210,33 @@ export function StatsSheet({ stats }: { stats: AdminStats }) {
     },
   ];
 
+  const { activeUsers } = stats;
+  const activeFigures = [
+    {
+      label: "Today",
+      value: activeUsers.today.toLocaleString("en-US"),
+      note: "so far, UTC",
+    },
+    {
+      label: "Last 7 days",
+      value: activeUsers.last7Days.toLocaleString("en-US"),
+      note: "distinct people",
+    },
+    {
+      label: "Last 30 days",
+      value: activeUsers.last30Days.toLocaleString("en-US"),
+      note: "distinct people",
+    },
+    {
+      label: "Of all accounts",
+      value:
+        users.active > 0
+          ? `${Math.round((activeUsers.last30Days / users.active) * 100)}%`
+          : "—",
+      note: "30-day actives ÷ active accounts",
+    },
+  ];
+
   return (
     <div className="hxp">
       <style dangerouslySetInnerHTML={{ __html: statsCss }} />
@@ -256,6 +267,21 @@ export function StatsSheet({ stats }: { stats: AdminStats }) {
             </div>
           ))}
         </div>
+
+        <h2 className="kicker">
+          <span>Active users</span>
+          <span className="aside">UTC days</span>
+        </h2>
+        <div className="figures">
+          {activeFigures.map((f) => (
+            <div className="figure" key={f.label}>
+              <span className="lbl">{f.label}</span>
+              <span className="val">{f.value}</span>
+              <span className="note">{f.note}</span>
+            </div>
+          ))}
+        </div>
+        <ActiveUsersChart series={stats.activeUsers} />
 
         <div className="pair">
           <section>

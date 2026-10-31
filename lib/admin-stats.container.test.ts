@@ -248,4 +248,66 @@ describe("loadAdminStats against the database", () => {
       expect(after.suggestions.pending - before.suggestions.pending).toBe(1);
     },
   );
+  ifRunningContainerTestsIt(
+    "counts distinct active users by UTC day, week and month",
+    async () => {
+      const admin = await factory.createAdminUser();
+      const [a, b, c, d, e] = await Promise.all(
+        Array.from({ length: 5 }, () => factory.createUser()),
+      );
+      // NOW is Wednesday 2099-06-17. Rows are written directly: what the
+      // recorder writes is its own test's business.
+      await db
+        .insertInto("user_active_days")
+        .values([
+          { user_id: a.id, day: "2099-06-17" }, // today
+          { user_id: b.id, day: "2099-06-17" }, // today
+          { user_id: a.id, day: "2099-06-15" }, // Monday this week
+          { user_id: c.id, day: "2099-06-11" }, // last week, within 7 days
+          { user_id: d.id, day: "2099-05-20" }, // within 30 days
+          { user_id: e.id, day: "2099-05-18" }, // exactly 30 days back: out
+        ])
+        .execute();
+
+      const { activeUsers } = await asUser(rls, admin.id, (trx) =>
+        loadAdminStats(trx, NOW),
+      );
+
+      expect(activeUsers.today).toBe(2);
+      expect(activeUsers.last7Days).toBe(3);
+      expect(activeUsers.last30Days).toBe(4);
+
+      expect(activeUsers.daily).toHaveLength(30);
+      expect(activeUsers.daily.at(-1)).toEqual({
+        start: at("2099-06-17T00:00:00Z"),
+        count: 2,
+      });
+      expect(activeUsers.daily.at(-3)).toEqual({
+        start: at("2099-06-15T00:00:00Z"),
+        count: 1,
+      });
+
+      expect(activeUsers.weekly).toHaveLength(26);
+      // a twice this week counts once.
+      expect(activeUsers.weekly.at(-1)).toEqual({
+        start: at("2099-06-15T00:00:00Z"),
+        count: 2,
+      });
+      expect(activeUsers.weekly.at(-2)).toEqual({
+        start: at("2099-06-08T00:00:00Z"),
+        count: 1,
+      });
+
+      expect(activeUsers.monthly).toHaveLength(12);
+      expect(activeUsers.monthly.at(-1)).toEqual({
+        start: at("2099-06-01T00:00:00Z"),
+        count: 3,
+      });
+      expect(activeUsers.monthly.at(-2)).toEqual({
+        start: at("2099-05-01T00:00:00Z"),
+        count: 2,
+      });
+      expect(activeUsers.monthly[0]!.start).toEqual(at("2098-07-01T00:00:00Z"));
+    },
+  );
 });

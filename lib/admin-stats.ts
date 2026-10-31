@@ -57,6 +57,20 @@ export interface AdminStats {
     /** Active users who get none of this, by choice or by default. */
     off: number;
   }[];
+  /**
+   * Distinct users with a recorded active day (lib/active-days.ts) in each
+   * window. Every series is oldest first, each `start` the first instant of
+   * its UTC period (weeks start Monday), and counts distinct users across the
+   * whole period: someone in on twenty days of a month counts once.
+   */
+  activeUsers: {
+    today: number;
+    last7Days: number;
+    last30Days: number;
+    daily: { start: Date; count: number }[];
+    weekly: { start: Date; count: number }[];
+    monthly: { start: Date; count: number }[];
+  };
   /** Oldest first; each `start` is the first instant of the UTC month. */
   signupsByMonth: { start: Date; count: number }[];
   /**
@@ -68,6 +82,39 @@ export interface AdminStats {
 }
 
 const n = (value: unknown): number => Number(value ?? 0);
+
+/** How many periods each active-users view covers. */
+export const ACTIVE_PERIODS = { day: 30, week: 26, month: 12 } as const;
+type Period = keyof typeof ACTIVE_PERIODS;
+
+/**
+ * Distinct active users per UTC period, for the last `ACTIVE_PERIODS[unit]`
+ * periods ending with the current one.
+ *
+ * Every date_trunc here works on a `timestamp` (no zone) already in UTC:
+ * date_trunc on a bare `date` would quietly cast it to timestamptz through
+ * the session's time zone and could shift a period by a day.
+ */
+function activeSeries(db: Executor, now: Date, unit: Period) {
+  const step = sql.raw(`interval '1 ${unit}'`);
+  const utcNow = sql`(${now}::timestamptz at time zone 'UTC')`;
+  return sql<{ start: Date; count: string }>`
+    with periods as (
+      select generate_series(
+        date_trunc(${unit}, ${utcNow}) - (${ACTIVE_PERIODS[unit] - 1}::int * ${step}),
+        date_trunc(${unit}, ${utcNow}),
+        ${step}
+      ) as start
+    )
+    select p.start at time zone 'UTC' as start, count(distinct a.user_id) as count
+    from periods p
+    left join user_active_days a
+      on a.day >= p.start::date
+     and a.day < (p.start + ${step})::date
+    group by p.start
+    order by p.start
+  `.execute(db);
+}
 
 /**
  * Everything the admin Stats page shows, as of `now`.
@@ -89,6 +136,10 @@ export async function loadAdminStats(
     notifications,
     signups,
     forecasters,
+    activeFigures,
+    activeDaily,
+    activeWeekly,
+    activeMonthly,
   ] = await Promise.all([
     db
       .selectFrom("users")
@@ -210,7 +261,24 @@ export async function loadAdminStats(
       group by w.start
       order by w.start
     `.execute(db),
+
+    sql<{ today: string; last_7: string; last_30: string }>`
+      select
+        count(distinct user_id) filter (where day = t.today) as today,
+        count(distinct user_id) filter (where day > t.today - 7) as last_7,
+        count(distinct user_id) as last_30
+      from user_active_days,
+        (select (${now}::timestamptz at time zone 'UTC')::date as today) t
+      where day > t.today - 30 and day <= t.today
+    `.execute(db),
+
+    activeSeries(db, now, "day"),
+    activeSeries(db, now, "week"),
+    activeSeries(db, now, "month"),
   ]);
+
+  const series = (rows: { start: Date; count: string }[]) =>
+    rows.map((r) => ({ start: new Date(r.start), count: n(r.count) }));
 
   const competitionRows: CompetitionStats[] = competitions.map((c) => {
     const members = c.is_private ? n(c.members) : null;
@@ -266,6 +334,14 @@ export async function loadAdminStats(
         off: n((notifications as Record<string, unknown>)[type]),
       };
     }),
+    activeUsers: {
+      today: n(activeFigures.rows[0]?.today),
+      last7Days: n(activeFigures.rows[0]?.last_7),
+      last30Days: n(activeFigures.rows[0]?.last_30),
+      daily: series(activeDaily.rows),
+      weekly: series(activeWeekly.rows),
+      monthly: series(activeMonthly.rows),
+    },
     signupsByMonth: signups.rows.map((r) => ({
       start: new Date(r.start),
       count: n(r.count),

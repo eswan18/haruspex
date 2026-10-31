@@ -6,6 +6,7 @@ import { db } from "@/lib/database";
 import { VUser } from "@/types/db_types";
 import { validateIDPToken } from "@/lib/idp/client";
 import { logger } from "@/lib/logger";
+import { recordActiveDay } from "@/lib/active-days";
 
 const IMPERSONATION_COOKIE = "impersonate";
 const IMPERSONATION_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
@@ -104,6 +105,9 @@ export async function getUserFromCookies(): Promise<VUser | null> {
     }
   }
 
+  // Only here, past the impersonation branch: an admin browsing as someone
+  // else must not mark that person as having used the site.
+  void recordActiveDay(realUser.id);
   return realUser;
 }
 

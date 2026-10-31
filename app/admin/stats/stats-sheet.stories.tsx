@@ -33,6 +33,23 @@ const sample: AdminStats = {
     { type: "competition.member_added", label: "Added to a competition", description: "When someone adds you to a private competition, so you know it is there.", off: 0 },
     { type: "competition.prop_added", label: "New props", description: "When a prop is added to a competition of yours that opens each prop on its own deadline.", off: 4 },
   ],
+  activeUsers: {
+    today: 7,
+    last7Days: 19,
+    last30Days: 31,
+    daily: Array.from({ length: 30 }, (_, i) => ({
+      start: new Date(Date.UTC(2026, 9, 2 + i)),
+      count: [6, 9, 11, 8, 7, 4, 3][i % 7]! + (i > 20 ? 3 : 0),
+    })),
+    weekly: Array.from({ length: 26 }, (_, i) => ({
+      start: new Date(Date.UTC(2026, 4, 4 + 7 * i)),
+      count: 10 + Math.round(6 * Math.sin(i / 3)) + (i > 18 ? 6 : 0),
+    })),
+    monthly: months.map((start, i) => ({
+      start,
+      count: [22, 30, 41, 28, 19, 17, 15, 16, 18, 20, 27, 31][i]!,
+    })),
+  },
   signupsByMonth: months.map((start, i) => ({ start, count: [3, 9, 17, 6, 2, 1, 0, 1, 2, 1, 2, 6][i]! })),
   forecastersByWeek: weeks.map((start, i) => ({ start, count: [4, 3, 5, 4, 6, 5, 7, 6, 8, 7, 9, 5][i]! })),
 };
@@ -69,6 +86,14 @@ export const Empty: Story = {
       competitions: { total: 0, takingForecasts: 0, rows: [] },
       suggestions: { pending: 0, accepted: 0, rejected: 0 },
       notifications: sample.notifications.map((n) => ({ ...n, off: 0 })),
+      activeUsers: {
+        today: 0,
+        last7Days: 0,
+        last30Days: 0,
+        daily: sample.activeUsers.daily.map((p) => ({ ...p, count: 0 })),
+        weekly: sample.activeUsers.weekly.map((p) => ({ ...p, count: 0 })),
+        monthly: sample.activeUsers.monthly.map((p) => ({ ...p, count: 0 })),
+      },
       signupsByMonth: sample.signupsByMonth.map((p) => ({ ...p, count: 0 })),
       forecastersByWeek: sample.forecastersByWeek.map((p) => ({ ...p, count: 0 })),
     },

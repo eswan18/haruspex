@@ -1,4 +1,4 @@
-import { Generated, Insertable, Selectable, Updateable } from "kysely";
+import { ColumnType, Generated, Insertable, Selectable, Updateable } from "kysely";
 
 import type { PropKind } from "@/lib/prop-kind";
 
@@ -15,6 +15,7 @@ export interface Database {
   resolution_options: ResolutionOptionsTable;
   resolutions: ResolutionsTable;
   suggested_props: SuggestedPropsTable;
+  user_active_days: UserActiveDaysTable;
   users: UsersTable;
   v_props: VPropsView;
   v_prop_options: VPropOptionsView;
@@ -158,6 +159,20 @@ export interface NotificationPreferencesTable {
 export type NotificationPreference = Selectable<NotificationPreferencesTable>;
 export type NewNotificationPreference =
   Insertable<NotificationPreferencesTable>;
+
+/**
+ * The days a user was signed in and using the app, one row per UTC day.
+ * Written by `lib/active-days.ts`; read only by the admin Stats page.
+ */
+export interface UserActiveDaysTable {
+  user_id: number;
+  /**
+   * A UTC calendar day, written as "YYYY-MM-DD". Never read it raw: `pg`
+   * parses DATE to a Date at *local* midnight, so do date work in SQL.
+   */
+  day: ColumnType<Date, string, never>;
+  created_at: Generated<Date>;
+}
 
 export interface FeatureFlagsTable {
   id: Generated<number>;

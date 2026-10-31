@@ -49,6 +49,13 @@ vi.mock("@/lib/idp/client", () => ({
   validateIDPToken: mockValidateIDPToken,
 }));
 
+// Mock the active-day recorder: it writes through the database helpers, and
+// what matters here is only whether, and for whom, it is called.
+const mockRecordActiveDay = vi.fn();
+vi.mock("@/lib/active-days", () => ({
+  recordActiveDay: mockRecordActiveDay,
+}));
+
 // Mock logger
 vi.mock("@/lib/logger", () => ({
   logger: {
@@ -106,6 +113,7 @@ describe("getUserFromCookies - IDP Token Support", () => {
 
       expect(mockValidateIDPToken).toHaveBeenCalledWith("idp-access-token");
       expect(result).toEqual(mockUser);
+      expect(mockRecordActiveDay).toHaveBeenCalledWith(1);
     });
 
     it("should return null for deactivated user with IDP token", async () => {
@@ -237,6 +245,8 @@ describe("getUserFromCookies - IDP Token Support", () => {
       const result = await getUserFromCookies();
 
       expect(result).toEqual(targetUser);
+      // An admin looking around as someone is not that person using the site.
+      expect(mockRecordActiveDay).not.toHaveBeenCalled();
     });
 
     it("should return real user when impersonation token is invalid", async () => {
