@@ -116,6 +116,7 @@ describe("notification preferences against the database", () => {
       const user = await factory.createUser();
 
       expect(await getEffectivePreferences(db, user.id)).toEqual({
+        "admin.announcement": true,
         "competition.member_added": true,
         "competition.prop_added": true,
       });
@@ -123,6 +124,7 @@ describe("notification preferences against the database", () => {
       await choose(user.id, false);
 
       expect(await getEffectivePreferences(db, user.id)).toEqual({
+        "admin.announcement": true,
         "competition.member_added": true,
         "competition.prop_added": false,
       });

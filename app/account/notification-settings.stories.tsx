@@ -37,6 +37,7 @@ const meta = {
   ],
   args: {
     values: {
+      "admin.announcement": true,
       "competition.member_added": true,
       "competition.prop_added": true,
     },
@@ -53,6 +54,7 @@ export const Defaults: Story = {};
 export const OneTurnedOff: Story = {
   args: {
     values: {
+      "admin.announcement": true,
       "competition.member_added": true,
       "competition.prop_added": false,
     },
@@ -63,6 +65,7 @@ export const OneTurnedOff: Story = {
 export const Saving: Story = {
   args: {
     values: {
+      "admin.announcement": true,
       "competition.member_added": true,
       "competition.prop_added": false,
     },

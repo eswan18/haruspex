@@ -42,6 +42,7 @@ describe("notification preference actions", () => {
   describe("getNotificationPreferences", () => {
     it("returns the reader's effective preferences", async () => {
       vi.mocked(preferences.getEffectivePreferences).mockResolvedValue({
+        "admin.announcement": true,
         "competition.member_added": true,
         "competition.prop_added": false,
       });
@@ -51,6 +52,7 @@ describe("notification preference actions", () => {
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data).toEqual({
+          "admin.announcement": true,
           "competition.member_added": true,
           "competition.prop_added": false,
         });
