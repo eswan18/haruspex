@@ -4,6 +4,7 @@ import { refreshAccessToken } from "@/lib/idp/client";
 import { isTokenNearExpiry } from "@/lib/auth/token-refresh";
 import { RefreshTokenRejectedError } from "@/lib/idp/errors";
 import { logger } from "@/lib/logger";
+import { SIGNED_OUT_MESSAGE } from "@/lib/thrown-error";
 
 /**
  * Routes that don't require authentication.
@@ -80,6 +81,18 @@ function keepSession(request: NextRequest, pathname: string, token: string) {
 }
 
 function redirectToLogin(request: NextRequest, pathname: string) {
+  // A server action is a POST from a page that is already open. Redirected,
+  // the call receives the login page's HTML and Next can only report "An
+  // unexpected response was received from the server". A 401 with a
+  // text/plain body reaches the caller as that text instead (Next requires
+  // the content type to be exactly text/plain), so the form can say what
+  // happened.
+  if (request.method === "POST" && request.headers.has("next-action")) {
+    return new NextResponse(SIGNED_OUT_MESSAGE, {
+      status: 401,
+      headers: { "content-type": "text/plain" },
+    });
+  }
   // Use configured base URL when behind a reverse proxy, falling back to request origin for local dev.
   const baseUrl = process.env.APP_BASE_URL ?? request.nextUrl.origin;
   const loginUrl = new URL("/login", baseUrl);
@@ -177,7 +190,10 @@ export async function proxy(request: NextRequest) {
       ...sharedCookieOpts,
       maxAge: 0,
     });
-    response.cookies.set(BACKOFF_COOKIE, "", { ...sharedCookieOpts, maxAge: 0 });
+    response.cookies.set(BACKOFF_COOKIE, "", {
+      ...sharedCookieOpts,
+      maxAge: 0,
+    });
     return response;
   }
 }
