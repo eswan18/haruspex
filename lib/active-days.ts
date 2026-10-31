@@ -6,8 +6,8 @@ import { logger } from "@/lib/logger";
 /**
  * Records that a user used the app today (UTC), for the admin Stats page's
  * active-user counts. Called from `getUserFromCookies` on every signed-in
- * request, never for an impersonated one: an admin looking around as someone
- * is not that person using the site.
+ * request, for the real user: an impersonating admin is recorded as
+ * themselves, never as the person they are looking around as.
  *
  * The database sees at most one write per user per day per server process.
  * This map remembers the last day this process recorded for each user, so
@@ -15,8 +15,7 @@ import { logger } from "@/lib/logger";
  * several pods, a second pod's write for the same day is a no-op insert. One
  * entry per user ever seen, so it is bounded by the number of accounts.
  *
- * Fire-and-forget: the request never waits on it, and a failure is logged and
- * forgotten (the entry is cleared so a later request tries again) rather than
+ * The request never waits on it, and a failure is logged and forgotten (the entry is cleared so a later request tries again) rather than
  * breaking a page over a statistic.
  */
 const recordedDay = new Map<number, string>();
@@ -27,8 +26,9 @@ export function utcDay(now: Date): string {
 }
 
 /**
- * Never rejects. The caller does not await it (`void recordActiveDay(…)`); the
- * promise is returned so tests can.
+ * Never rejects. The caller schedules it with `after()` rather than awaiting
+ * it, so the response never waits on it; the promise is what `after` (and the
+ * tests) wait for.
  */
 export function recordActiveDay(
   userId: number,

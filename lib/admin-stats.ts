@@ -67,6 +67,12 @@ export interface AdminStats {
     today: number;
     last7Days: number;
     last30Days: number;
+    /**
+     * Of `last30Days`, those whose account is still active: the numerator
+     * when comparing against `users.active`, which a since-deactivated
+     * visitor would otherwise push past 100%.
+     */
+    last30DaysStillActive: number;
     daily: { start: Date; count: number }[];
     weekly: { start: Date; count: number }[];
     monthly: { start: Date; count: number }[];
@@ -262,14 +268,21 @@ export async function loadAdminStats(
       order by w.start
     `.execute(db),
 
-    sql<{ today: string; last_7: string; last_30: string }>`
+    sql<{
+      today: string;
+      last_7: string;
+      last_30: string;
+      last_30_still_active: string;
+    }>`
       select
-        count(distinct user_id) filter (where day = t.today) as today,
-        count(distinct user_id) filter (where day > t.today - 7) as last_7,
-        count(distinct user_id) as last_30
-      from user_active_days,
+        count(distinct a.user_id) filter (where a.day = t.today) as today,
+        count(distinct a.user_id) filter (where a.day > t.today - 7) as last_7,
+        count(distinct a.user_id) as last_30,
+        count(distinct a.user_id) filter (where u.deactivated_at is null) as last_30_still_active
+      from user_active_days a
+      join users u on u.id = a.user_id,
         (select (${now}::timestamptz at time zone 'UTC')::date as today) t
-      where day > t.today - 30 and day <= t.today
+      where a.day > t.today - 30 and a.day <= t.today
     `.execute(db),
 
     activeSeries(db, now, "day"),
@@ -338,6 +351,7 @@ export async function loadAdminStats(
       today: n(activeFigures.rows[0]?.today),
       last7Days: n(activeFigures.rows[0]?.last_7),
       last30Days: n(activeFigures.rows[0]?.last_30),
+      last30DaysStillActive: n(activeFigures.rows[0]?.last_30_still_active),
       daily: series(activeDaily.rows),
       weekly: series(activeWeekly.rows),
       monthly: series(activeMonthly.rows),

@@ -37,6 +37,7 @@ const sample: AdminStats = {
     today: 7,
     last7Days: 19,
     last30Days: 31,
+    last30DaysStillActive: 30,
     daily: Array.from({ length: 30 }, (_, i) => ({
       start: new Date(Date.UTC(2026, 9, 2 + i)),
       count: [6, 9, 11, 8, 7, 4, 3][i % 7]! + (i > 20 ? 3 : 0),
@@ -90,6 +91,7 @@ export const Empty: Story = {
         today: 0,
         last7Days: 0,
         last30Days: 0,
+        last30DaysStillActive: 0,
         daily: sample.activeUsers.daily.map((p) => ({ ...p, count: 0 })),
         weekly: sample.activeUsers.weekly.map((p) => ({ ...p, count: 0 })),
         monthly: sample.activeUsers.monthly.map((p) => ({ ...p, count: 0 })),

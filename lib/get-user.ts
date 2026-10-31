@@ -1,6 +1,7 @@
 "use server";
 
 import { cookies } from "next/headers";
+import { after } from "next/server";
 import crypto from "crypto";
 import { db } from "@/lib/database";
 import { VUser } from "@/types/db_types";
@@ -82,6 +83,12 @@ export async function getUserFromCookies(): Promise<VUser | null> {
     return null;
   }
 
+  // The real user, before any impersonation: an admin browsing as someone
+  // else is themselves using the site, and must not mark that someone as
+  // having used it. after(), not a bare promise, so a pod shutting down
+  // finishes the write instead of dropping it.
+  after(() => recordActiveDay(realUser.id));
+
   // Check for impersonation (admin only)
   const impersonationToken = cookieStore.get(IMPERSONATION_COOKIE)?.value;
   if (impersonationToken && realUser.is_admin) {
@@ -105,9 +112,6 @@ export async function getUserFromCookies(): Promise<VUser | null> {
     }
   }
 
-  // Only here, past the impersonation branch: an admin browsing as someone
-  // else must not mark that person as having used the site.
-  void recordActiveDay(realUser.id);
   return realUser;
 }
 

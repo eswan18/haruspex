@@ -17,6 +17,11 @@ const monthFmt = new Intl.DateTimeFormat("en-US", {
   month: "short",
   timeZone: "UTC",
 });
+const monthYearFmt = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  year: "numeric",
+  timeZone: "UTC",
+});
 
 const VIEWS: Record<
   View,
@@ -25,6 +30,8 @@ const VIEWS: Record<
     span: string;
     caption: string;
     label: (d: Date) => string;
+    /** The readout's fuller name for a period than the axis has room for. */
+    readout: (d: Date) => string;
     showValues: boolean;
     labelEvery: number;
   }
@@ -34,6 +41,7 @@ const VIEWS: Record<
     span: "Last 30 days",
     caption: "People who used Haruspex while signed in that UTC day.",
     label: (d) => dayFmt.format(d),
+    readout: (d) => dayFmt.format(d),
     showValues: false,
     labelEvery: 7,
   },
@@ -43,6 +51,7 @@ const VIEWS: Record<
     caption:
       "Distinct people active each week, Monday to Sunday, UTC. Someone in every day counts once.",
     label: (d) => dayFmt.format(d),
+    readout: (d) => `Week of ${dayFmt.format(d)}`,
     showValues: false,
     labelEvery: 4,
   },
@@ -51,6 +60,7 @@ const VIEWS: Record<
     span: "Last 12 months",
     caption: "Distinct people active each calendar month, UTC.",
     label: (d) => monthFmt.format(d),
+    readout: (d) => monthYearFmt.format(d),
     showValues: true,
     labelEvery: 1,
   },
@@ -68,6 +78,12 @@ export function ActiveUsersChart({
 }) {
   const [view, setView] = useState<View>("daily");
   const spec = VIEWS[view];
+  const points = series[view];
+  // Which bar the readout describes: the latest until one is pointed at, and
+  // the latest again whenever the view changes.
+  const [picked, setPicked] = useState<number | null>(null);
+  const index = picked ?? points.length - 1;
+  const point = points[index];
 
   return (
     <>
@@ -78,7 +94,10 @@ export function ActiveUsersChart({
               type="button"
               key={v}
               aria-pressed={view === v}
-              onClick={() => setView(v)}
+              onClick={() => {
+                setView(v);
+                setPicked(null);
+              }}
             >
               {VIEWS[v].name}
             </button>
@@ -86,16 +105,31 @@ export function ActiveUsersChart({
         </div>
         <span className="aside">{spec.span}</span>
       </div>
+      {point && (
+        <p className="readout" aria-live="polite">
+          <span className="when">{spec.readout(point.start)}</span>
+          <span className="count">
+            {point.count.toLocaleString("en-US")}{" "}
+            {point.count === 1 ? "person" : "people"}
+          </span>
+          {index === points.length - 1 && (
+            <span className="when">so far</span>
+          )}
+        </p>
+      )}
       <BarChart
-        points={series[view]}
+        points={points}
         label={spec.label}
         liveLast
         showValues={spec.showValues}
         labelEvery={spec.labelEvery}
+        selected={index}
+        onSelect={setPicked}
       />
       <p className="caption">
-        {spec.caption} Hover a bar for its count. Impersonation is not counted.
-        The red bar is still counting. Recorded only from the day this shipped.
+        {spec.caption} Point at or tap a bar to read it above. An admin
+        impersonating someone counts as themselves. The red bar is still
+        counting. Recorded only from the day this shipped.
       </p>
     </>
   );

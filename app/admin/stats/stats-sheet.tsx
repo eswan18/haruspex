@@ -98,10 +98,60 @@ export const statsCss = `
   text-transform: uppercase;
   color: var(--ink-muted);
 }
-.hxp .chart-head + .bars.plot { padding-top: 1.25rem; }
+.hxp .readout + .bars.plot { padding-top: 0.75rem; }
 /* With only every nth bar labelled, a label may spill into the unlabelled
    columns either side of it rather than be cut to its own bar's width. */
-.hxp .bars.axis.sparse .lbl { overflow: visible; }
+.hxp .bars.axis.sparse .lbl {
+  overflow: visible;
+  display: flex;
+  justify-content: center;
+}
+/* The last bar is always labelled, so its label ends at the chart's edge
+   rather than centring over its bar and hanging past it. Flex, not
+   text-align: text wider than its box spills right whatever text-align says,
+   while flex-end sends the overflow left. */
+.hxp .bars.axis.sparse .lbl:last-child { justify-content: flex-end; }
+
+/* A bar that can be pointed at: a button with no chrome of its own. The
+   selected one is underlined by a short ink rule, not recoloured: red is
+   spoken for by the bar still counting. */
+.hxp .stack.pick {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  position: relative;
+}
+.hxp .stack.pick[aria-pressed="true"]::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -0.4375rem;
+  height: 3px;
+  background: var(--ink);
+}
+.hxp .stack.pick:focus-visible {
+  outline: 2px solid var(--red-text);
+  outline-offset: 2px;
+}
+.hxp .readout {
+  margin: 1rem 0 0;
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  font-family: var(--font-roboto-mono), ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
+.hxp .readout .when {
+  font-size: 0.6875rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+.hxp .readout .count { font-size: 1.125rem; }
 .hxp .caption {
   margin: 0.75rem 0 0;
   font-size: 0.8125rem;
@@ -175,43 +225,64 @@ function count(value: number, one: string, many = `${one}s`): string {
   return `${value.toLocaleString("en-US")} ${value === 1 ? one : many}`;
 }
 
+interface Figure {
+  label: string;
+  value: string;
+  note: string;
+}
+
+/** A run of headline figures: kicker label, big tabular number, note. */
+function Figures({ items }: { items: Figure[] }) {
+  return (
+    <div className="figures">
+      {items.map((f) => (
+        <div className="figure" key={f.label}>
+          <span className="lbl">{f.label}</span>
+          <span className="val">{f.value}</span>
+          <span className="note">{f.note}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function StatsSheet({ stats }: { stats: AdminStats }) {
   const { users, forecasts, props, competitions, suggestions } = stats;
-  const figures = [
+  const figures: Figure[] = [
     {
       label: "Active users",
-      value: users.active,
+      value: users.active.toLocaleString("en-US"),
       note: `${users.deactivated.toLocaleString("en-US")} deactivated`,
     },
     {
       label: "New this month",
-      value: users.newThisMonth,
+      value: users.newThisMonth.toLocaleString("en-US"),
       note: `${users.newLastMonth.toLocaleString("en-US")} last month`,
     },
     {
       label: "Forecasts",
-      value: forecasts.total,
+      value: forecasts.total.toLocaleString("en-US"),
       note: `${forecasts.last7Days.toLocaleString("en-US")} in the last 7 days`,
     },
     {
       label: "Props",
-      value: props.inCompetitions,
+      value: props.inCompetitions.toLocaleString("en-US"),
       note: `plus ${count(props.personal, "personal prop")}`,
     },
     {
       label: "Competitions",
-      value: competitions.total,
+      value: competitions.total.toLocaleString("en-US"),
       note: `${competitions.takingForecasts.toLocaleString("en-US")} taking forecasts`,
     },
     {
       label: "Suggestions waiting",
-      value: suggestions.pending,
+      value: suggestions.pending.toLocaleString("en-US"),
       note: "for review",
     },
   ];
 
   const { activeUsers } = stats;
-  const activeFigures = [
+  const activeFigures: Figure[] = [
     {
       label: "Today",
       value: activeUsers.today.toLocaleString("en-US"),
@@ -231,9 +302,9 @@ export function StatsSheet({ stats }: { stats: AdminStats }) {
       label: "Of all accounts",
       value:
         users.active > 0
-          ? `${Math.round((activeUsers.last30Days / users.active) * 100)}%`
+          ? `${Math.round((activeUsers.last30DaysStillActive / users.active) * 100)}%`
           : "—",
-      note: "30-day actives ÷ active accounts",
+      note: "of active accounts, used it in the last 30 days",
     },
   ];
 
@@ -258,29 +329,13 @@ export function StatsSheet({ stats }: { stats: AdminStats }) {
             </Link>
           </span>
         </h2>
-        <div className="figures">
-          {figures.map((f) => (
-            <div className="figure" key={f.label}>
-              <span className="lbl">{f.label}</span>
-              <span className="val">{f.value.toLocaleString("en-US")}</span>
-              <span className="note">{f.note}</span>
-            </div>
-          ))}
-        </div>
+        <Figures items={figures} />
 
         <h2 className="kicker">
           <span>Active users</span>
           <span className="aside">UTC days</span>
         </h2>
-        <div className="figures">
-          {activeFigures.map((f) => (
-            <div className="figure" key={f.label}>
-              <span className="lbl">{f.label}</span>
-              <span className="val">{f.value}</span>
-              <span className="note">{f.note}</span>
-            </div>
-          ))}
-        </div>
+        <Figures items={activeFigures} />
         <ActiveUsersChart series={stats.activeUsers} />
 
         <div className="pair">

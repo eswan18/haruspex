@@ -252,9 +252,14 @@ describe("loadAdminStats against the database", () => {
     "counts distinct active users by UTC day, week and month",
     async () => {
       const admin = await factory.createAdminUser();
-      const [a, b, c, d, e] = await Promise.all(
-        Array.from({ length: 5 }, () => factory.createUser()),
+      const [a, b, c, d, e, gone] = await Promise.all(
+        Array.from({ length: 6 }, () => factory.createUser()),
       );
+      await db
+        .updateTable("users")
+        .set({ deactivated_at: new Date() })
+        .where("id", "=", gone.id)
+        .execute();
       // NOW is Wednesday 2099-06-17. Rows are written directly: what the
       // recorder writes is its own test's business.
       await db
@@ -266,6 +271,7 @@ describe("loadAdminStats against the database", () => {
           { user_id: c.id, day: "2099-06-11" }, // last week, within 7 days
           { user_id: d.id, day: "2099-05-20" }, // within 30 days
           { user_id: e.id, day: "2099-05-18" }, // exactly 30 days back: out
+          { user_id: gone.id, day: "2099-06-01" }, // since deactivated
         ])
         .execute();
 
@@ -275,7 +281,10 @@ describe("loadAdminStats against the database", () => {
 
       expect(activeUsers.today).toBe(2);
       expect(activeUsers.last7Days).toBe(3);
-      expect(activeUsers.last30Days).toBe(4);
+      // History keeps everyone who was active then; the share's numerator
+      // keeps only accounts still active.
+      expect(activeUsers.last30Days).toBe(5);
+      expect(activeUsers.last30DaysStillActive).toBe(4);
 
       expect(activeUsers.daily).toHaveLength(30);
       expect(activeUsers.daily.at(-1)).toEqual({
@@ -301,7 +310,7 @@ describe("loadAdminStats against the database", () => {
       expect(activeUsers.monthly).toHaveLength(12);
       expect(activeUsers.monthly.at(-1)).toEqual({
         start: at("2099-06-01T00:00:00Z"),
-        count: 3,
+        count: 4,
       });
       expect(activeUsers.monthly.at(-2)).toEqual({
         start: at("2099-05-01T00:00:00Z"),
