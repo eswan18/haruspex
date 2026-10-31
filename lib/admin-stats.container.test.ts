@@ -2,11 +2,7 @@ import { vi, describe, expect, beforeEach } from "vitest";
 import { sql, type Kysely } from "kysely";
 
 import type { Database } from "@/types/db_types";
-import {
-  asUser,
-  getRlsTestDb,
-  getTestDb,
-} from "../tests/helpers/testDatabase";
+import { asUser, getRlsTestDb, getTestDb } from "../tests/helpers/testDatabase";
 import { TestDataFactory } from "../tests/helpers/testFactories";
 import { getTestTracker } from "../tests/helpers/testIdTracker";
 import {
@@ -54,7 +50,11 @@ describe("loadAdminStats against the database", () => {
   async function addMember(competitionId: number, userId: number) {
     const row = await db
       .insertInto("competition_members")
-      .values({ competition_id: competitionId, user_id: userId, role: "forecaster" })
+      .values({
+        competition_id: competitionId,
+        user_id: userId,
+        role: "forecaster",
+      })
       .returning("id")
       .executeTakeFirstOrThrow();
     getTestTracker().trackId("competition_members", row.id);
@@ -205,47 +205,75 @@ describe("loadAdminStats against the database", () => {
   ifRunningContainerTestsIt(
     "counts opt-outs among active users, and pending suggestions",
     async () => {
-      const admin = await factory.createAdminUser();
-      const before = await asUser(rls, admin.id, (trx) =>
-        loadAdminStats(trx, NOW),
-      );
-
-      const optedOut = await factory.createUser();
-      const deactivatedOptOut = await factory.createUser();
+      // These totals span the whole table, and other files write to it while
+      // this runs -- the review tests decide suggestions, and every file's
+      // cleanup deletes users. A before/after difference read across commits
+      // picks that up, so the whole test is one REPEATABLE READ snapshot: the
+      // reads see this test's own writes and nobody else's. It rolls back,
+      // leaving nothing to clean up. Reads still go through app_user, so RLS
+      // applies to them exactly as it does to the page.
+      class Rollback extends Error {}
       await db
-        .updateTable("users")
-        .set({ deactivated_at: new Date() })
-        .where("id", "=", deactivatedOptOut.id)
-        .execute();
-      await db
-        .insertInto("notification_preferences")
-        .values([
-          { user_id: optedOut.id, notification_type: "admin.announcement", enabled: false },
-          {
-            user_id: deactivatedOptOut.id,
-            notification_type: "admin.announcement",
-            enabled: false,
-          },
-        ])
-        .execute();
-      const suggestion = await db
-        .insertInto("suggested_props")
-        .values({ suggester_user_id: optedOut.id, prop: "Will it rain?" })
-        .returning("id")
-        .executeTakeFirstOrThrow();
-      getTestTracker().trackId("suggested_props", suggestion.id);
+        .transaction()
+        .setIsolationLevel("repeatable read")
+        .execute(async (trx) => {
+          const factory = new TestDataFactory(trx);
+          const admin = await factory.createAdminUser();
+          const readAsAdmin = async () => {
+            await sql`SET LOCAL ROLE app_user`.execute(trx);
+            await sql`SELECT set_config('app.current_user_id', ${String(admin.id)}, true)`.execute(
+              trx,
+            );
+            const stats = await loadAdminStats(trx, NOW);
+            await sql`RESET ROLE`.execute(trx);
+            return stats;
+          };
+          const before = await readAsAdmin();
 
-      const after = await asUser(rls, admin.id, (trx) =>
-        loadAdminStats(trx, NOW),
-      );
-      const off = (s: typeof after) =>
-        s.notifications.find((x) => x.type === "admin.announcement")!.off;
+          const optedOut = await factory.createUser();
+          const deactivatedOptOut = await factory.createUser();
+          await trx
+            .updateTable("users")
+            .set({ deactivated_at: new Date() })
+            .where("id", "=", deactivatedOptOut.id)
+            .execute();
+          await trx
+            .insertInto("notification_preferences")
+            .values([
+              {
+                user_id: optedOut.id,
+                notification_type: "admin.announcement",
+                enabled: false,
+              },
+              {
+                user_id: deactivatedOptOut.id,
+                notification_type: "admin.announcement",
+                enabled: false,
+              },
+            ])
+            .execute();
+          await trx
+            .insertInto("suggested_props")
+            .values({ suggester_user_id: optedOut.id, prop: "Will it rain?" })
+            .execute();
 
-      // The deactivated user's opt-out is not counted: they get nothing anyway.
-      expect(off(after) - off(before)).toBe(1);
-      expect(after.users.active - before.users.active).toBe(1);
-      expect(after.users.deactivated - before.users.deactivated).toBe(1);
-      expect(after.suggestions.pending - before.suggestions.pending).toBe(1);
+          const after = await readAsAdmin();
+          const off = (s: typeof after) =>
+            s.notifications.find((x) => x.type === "admin.announcement")!.off;
+
+          // The deactivated user's opt-out is not counted: they get nothing
+          // anyway. The admin was created before `before`, so is in both.
+          expect(off(after) - off(before)).toBe(1);
+          expect(after.users.active - before.users.active).toBe(1);
+          expect(after.users.deactivated - before.users.deactivated).toBe(1);
+          expect(after.suggestions.pending - before.suggestions.pending).toBe(
+            1,
+          );
+          throw new Rollback();
+        })
+        .catch((err) => {
+          if (!(err instanceof Rollback)) throw err;
+        });
     },
   );
 });
