@@ -14,6 +14,11 @@ const PUBLIC_ROUTES = [
   "/oauth", // OAuth login and callback routes
   "/api/health",
   "/api/me", // Returns null if not logged in, used by client components
+  // Unsubscribe links prove their reader with a signed token and read no
+  // session. Behind login they broke for everyone: a mail client's one-click
+  // POST never carries cookies, and the login redirect drops the `?t=` token.
+  "/unsubscribe",
+  "/api/unsubscribe",
 ];
 
 const REFRESH_BUFFER_SEC = 60;
