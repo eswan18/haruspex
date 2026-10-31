@@ -14,6 +14,7 @@ import { UserStatus } from "./user-status";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import {
+  Activity,
   BarChartHorizontal,
   Flag,
   Medal,
@@ -144,6 +145,11 @@ export default function NavBar() {
       href: "/admin/suggested-props",
       label: "Suggested Props",
       icon: <MessageCircle size={16} />,
+    },
+    {
+      href: "/admin/stats",
+      label: "Stats",
+      icon: <Activity size={16} />,
     },
     {
       href: "/admin/forecast-progress",
