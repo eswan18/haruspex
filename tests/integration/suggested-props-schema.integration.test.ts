@@ -260,6 +260,107 @@ describe("suggested props schema", () => {
     });
   });
 
+  describe("who can make a suggestion", () => {
+    /**
+     * These run createSuggestedProp's query as a reader, through the role the
+     * policies actually apply to.
+     */
+    ifRunningContainerTestsIt("lets a reader suggest a prop", async () => {
+      const reader = await factory.createUser();
+
+      await asUser(rls, reader.id, (trx) =>
+        trx
+          .insertInto("suggested_props")
+          .values({ suggester_user_id: reader.id, prop: "A claim." })
+          .execute(),
+      );
+
+      const rows = await db
+        .selectFrom("suggested_props")
+        .select("prop")
+        .where("suggester_user_id", "=", reader.id)
+        .execute();
+      expect(rows).toEqual([{ prop: "A claim." }]);
+    });
+
+    /**
+     * Why createSuggestedProp has no RETURNING: a returned row must also pass
+     * the SELECT policies, and those are admin-only. It broke every reader's
+     * submission until Oct 2026.
+     */
+    ifRunningContainerTestsIt(
+      "refuses a reader's insert that asks for the row back",
+      async () => {
+        const reader = await factory.createUser();
+
+        await expect(
+          asUser(rls, reader.id, (trx) =>
+            trx
+              .insertInto("suggested_props")
+              .values({ suggester_user_id: reader.id, prop: "A claim." })
+              .returning("id")
+              .execute(),
+          ),
+        ).rejects.toThrow(/row-level security/);
+      },
+    );
+
+    ifRunningContainerTestsIt(
+      "refuses a suggestion made in someone else's name",
+      async () => {
+        const reader = await factory.createUser();
+        const other = await factory.createUser();
+
+        await expect(
+          asUser(rls, reader.id, (trx) =>
+            trx
+              .insertInto("suggested_props")
+              .values({ suggester_user_id: other.id, prop: "Not mine." })
+              .execute(),
+          ),
+        ).rejects.toThrow(/row-level security/);
+      },
+    );
+
+    ifRunningContainerTestsIt(
+      "refuses a suggestion with no one signed in",
+      async () => {
+        const reader = await factory.createUser();
+
+        await expect(
+          asUser(rls, null, (trx) =>
+            trx
+              .insertInto("suggested_props")
+              .values({ suggester_user_id: reader.id, prop: "Anonymous." })
+              .execute(),
+          ),
+        ).rejects.toThrow(/row-level security/);
+      },
+    );
+
+    ifRunningContainerTestsIt(
+      "refuses a reader's suggestion that arrives already decided",
+      async () => {
+        const reader = await factory.createUser();
+
+        await expect(
+          asUser(rls, reader.id, (trx) =>
+            trx
+              .insertInto("suggested_props")
+              .values({
+                suggester_user_id: reader.id,
+                prop: "Accepted by me.",
+                status: "accepted",
+                decided_by: reader.id,
+                decided_at: new Date(),
+              })
+              .execute(),
+          ),
+        ).rejects.toThrow(/row-level security/);
+      },
+    );
+  });
+
   describe("the view's security options", () => {
     ifRunningContainerTestsIt(
       "sets security_invoker so table policies cascade",

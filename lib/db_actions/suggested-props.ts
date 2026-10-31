@@ -1,20 +1,19 @@
 "use server";
 
-import {
-  NewSuggestedProp,
-  SuggestedPropStatus,
-  VSuggestedProp,
-} from "@/types/db_types";
+import { SuggestedPropStatus, VSuggestedProp } from "@/types/db_types";
 import { getUserFromCookies } from "@/lib/get-user";
 import { logger } from "@/lib/logger";
 import { revalidatePath } from "next/cache";
 import {
   ServerActionResult,
+  ServerActionResultWithValidation,
   success,
   error,
+  validationError,
   ERROR_CODES,
 } from "@/lib/server-action-result";
 import { withRLS } from "@/lib/db-helpers";
+import { checkSuggestion } from "@/lib/suggested-prop";
 
 export async function getSuggestedProps(): Promise<
   ServerActionResult<VSuggestedProp[]>
@@ -109,59 +108,70 @@ export async function getSuggestedPropById({
   }
 }
 
+/**
+ * A reader's suggestion. Only the text crosses from the client: who suggested
+ * it comes from the session, and a suggestion always starts undecided.
+ *
+ * No RETURNING on the insert. Under RLS a returned row must also pass the
+ * table's SELECT policies, which are admin-only, so for every reader it failed
+ * with "new row violates row-level security policy" -- and nothing here needs
+ * the id.
+ */
 export async function createSuggestedProp({
   prop,
+  notes,
 }: {
-  prop: NewSuggestedProp;
-}): Promise<ServerActionResult<number>> {
+  prop: string;
+  notes: string | null;
+}): Promise<ServerActionResultWithValidation<void>> {
   const currentUser = await getUserFromCookies();
   logger.debug("Creating suggested prop", {
-    suggesterUserId: prop.suggester_user_id,
     currentUserId: currentUser?.id,
   });
 
   const startTime = Date.now();
   try {
     if (!currentUser) {
-      logger.warn("Unauthorized attempt to create suggested prop", {
-        suggesterUserId: prop.suggester_user_id,
-      });
+      logger.warn("Unauthorized attempt to create suggested prop");
       return error("You must be logged in", ERROR_CODES.UNAUTHORIZED);
     }
 
-    // Make sure the user is suggesting a prop with their own user ID.
-    if (prop.suggester_user_id !== currentUser.id) {
-      logger.warn("User attempted to suggest prop for different user", {
-        suggesterUserId: prop.suggester_user_id,
-        currentUserId: currentUser.id,
-      });
-      return error("Unauthorized", ERROR_CODES.UNAUTHORIZED);
+    const checked = checkSuggestion({ prop, notes });
+    if (!checked.ok) {
+      return validationError(
+        checked.error,
+        { [checked.field]: [checked.error] },
+        ERROR_CODES.VALIDATION_ERROR,
+      );
     }
 
-    const { id } = await withRLS(currentUser.id, async (trx) => {
-      return await trx
+    await withRLS(currentUser.id, async (trx) => {
+      await trx
         .insertInto("suggested_props")
-        .values(prop)
-        .returning("id")
-        .executeTakeFirstOrThrow();
+        .values({
+          prop: checked.prop,
+          notes: checked.notes,
+          suggester_user_id: currentUser.id,
+        })
+        .execute();
     });
 
     const duration = Date.now() - startTime;
     logger.info("Suggested prop created successfully", {
       operation: "createSuggestedProp",
       table: "suggested_props",
-      suggestedPropId: id,
-      suggesterUserId: prop.suggester_user_id,
+      suggesterUserId: currentUser.id,
       duration,
     });
 
-    return success(id);
+    revalidatePath("/admin/suggested-props");
+    return success(undefined);
   } catch (err) {
     const duration = Date.now() - startTime;
     logger.error("Failed to create suggested prop", err as Error, {
       operation: "createSuggestedProp",
       table: "suggested_props",
-      suggesterUserId: prop.suggester_user_id,
+      suggesterUserId: currentUser?.id,
       duration,
     });
     return error("Failed to create suggested prop", ERROR_CODES.DATABASE_ERROR);

@@ -6,22 +6,36 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 
 import { Field, FormSheet, Refusal } from "@/components/form-sheet/form-sheet";
-import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useToast } from "@/hooks/use-toast";
 import { createSuggestedProp } from "@/lib/db_actions";
+import {
+  CLAIM_MAX_LENGTH,
+  CLAIM_MIN_LENGTH,
+  NOTES_MAX_LENGTH,
+} from "@/lib/suggested-prop";
 import { describeThrownError } from "@/lib/thrown-error";
 
-const CLAIM_MAX = 500;
-const NOTES_MAX = 500;
-
 const formSchema = z.object({
+  // The server re-checks all of this (lib/suggested-prop.ts); here it is
+  // only so the reader hears about it before sending.
   propText: z
     .string()
-    .min(8, "Say a little more — at least 8 characters")
-    .max(CLAIM_MAX, `Keep the claim under ${CLAIM_MAX} characters`),
+    .trim()
+    .min(
+      CLAIM_MIN_LENGTH,
+      `Say a little more — at least ${CLAIM_MIN_LENGTH} characters`,
+    )
+    .max(
+      CLAIM_MAX_LENGTH,
+      `Keep the claim under ${CLAIM_MAX_LENGTH} characters`,
+    ),
   notes: z
     .string()
-    .max(NOTES_MAX, `Keep the notes under ${NOTES_MAX} characters`)
+    .trim()
+    .max(
+      NOTES_MAX_LENGTH,
+      `Keep the notes under ${NOTES_MAX_LENGTH} characters`,
+    )
     .optional(),
 });
 
@@ -31,7 +45,6 @@ export function SuggestPropForm() {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const { toast } = useToast();
-  const { user } = useCurrentUser();
   const claimId = useId();
   const notesId = useId();
 
@@ -44,17 +57,12 @@ export function SuggestPropForm() {
   const notes = form.watch("notes") ?? "";
 
   async function onSubmit(values: Values) {
-    if (!user) return;
     setSaving(true);
     setError("");
     try {
       const result = await createSuggestedProp({
-        prop: {
-          prop: values.propText,
-          // An empty box is an absent note, not an empty one.
-          notes: values.notes?.trim() ? values.notes : null,
-          suggester_user_id: user.id,
-        },
+        prop: values.propText,
+        notes: values.notes ?? null,
       });
       if (result.success) {
         form.reset({ propText: "", notes: "" });
@@ -62,6 +70,25 @@ export function SuggestPropForm() {
           title: "Suggestion sent",
           description: "An admin will look at it before it goes in a season.",
         });
+      } else if ("validationErrors" in result && result.validationErrors) {
+        // The server's check refused a field the form let through; say so on
+        // the field itself, where the client-side errors appear.
+        const { prop, notes } = result.validationErrors;
+        if (prop?.[0]) {
+          form.setError(
+            "propText",
+            { message: prop[0] },
+            { shouldFocus: true },
+          );
+        }
+        if (notes?.[0]) {
+          form.setError(
+            "notes",
+            { message: notes[0] },
+            { shouldFocus: !prop?.[0] },
+          );
+        }
+        if (!prop?.[0] && !notes?.[0]) setError(result.error);
       } else {
         setError(result.error);
       }
@@ -84,13 +111,14 @@ export function SuggestPropForm() {
           label="The claim"
           htmlFor={claimId}
           hint="A statement that will turn out true or false. Markdown works."
-          count={[claim.length, CLAIM_MAX]}
+          count={[claim.length, CLAIM_MAX_LENGTH]}
           error={form.formState.errors.propText?.message}
         >
           <textarea
             id={claimId}
             rows={3}
             placeholder="Bitcoin closes the year above $150,000."
+            aria-invalid={!!form.formState.errors.propText}
             {...form.register("propText")}
           />
         </Field>
@@ -100,13 +128,14 @@ export function SuggestPropForm() {
           htmlFor={notesId}
           optional
           hint="How it should be settled, and anything a reader would need to judge it."
-          count={[notes.length, NOTES_MAX]}
+          count={[notes.length, NOTES_MAX_LENGTH]}
           error={form.formState.errors.notes?.message}
         >
           <textarea
             id={notesId}
             rows={3}
             placeholder="Settled on the closing price reported by Coinbase at 00:00 UTC on 1 January."
+            aria-invalid={!!form.formState.errors.notes}
             {...form.register("notes")}
           />
         </Field>
