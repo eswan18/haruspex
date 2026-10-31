@@ -51,7 +51,7 @@ This is a Next.js forecasting application inspired by Philip Tetlock's Good Judg
 - **Database**: PostgreSQL with Kysely query builder
 - **Connection**: `/lib/database.ts` exports `db` instance
 - **Types**: `/types/db_types.ts` contains all database types and table definitions
-- **Tables**: users, forecasts, props, competitions, categories, resolutions, feature_flags, competition_members (roles: `admin`/`forecaster`), notification_preferences, plus the choice-prop tables prop_options, forecast_options, resolution_options
+- **Tables**: users, forecasts, props, competitions, categories, resolutions, feature_flags, competition_members (roles: `admin`/`forecaster`), notification_preferences, user_active_days (one row per user per UTC day signed in, written by `lib/active-days.ts` and read by the admin Stats page), plus the choice-prop tables prop_options, forecast_options, resolution_options
 - **Prop kinds**: `props.kind` is `binary` (one yes/no probability, the header row's `forecast`/`resolution`), `one_of`, or `any_of`; the choice kinds leave the header value null and carry a probability/outcome per option in the `*_options` child tables
 - **Views**: Prefixed with `v_` (e.g., `v_forecasts`, `v_props`, `v_prop_options`) for complex queries with joins
 

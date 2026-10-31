@@ -1,11 +1,13 @@
 "use server";
 
 import { cookies } from "next/headers";
+import { after } from "next/server";
 import crypto from "crypto";
 import { db } from "@/lib/database";
 import { VUser } from "@/types/db_types";
 import { validateIDPToken } from "@/lib/idp/client";
 import { logger } from "@/lib/logger";
+import { recordActiveDay } from "@/lib/active-days";
 
 const IMPERSONATION_COOKIE = "impersonate";
 const IMPERSONATION_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
@@ -80,6 +82,12 @@ export async function getUserFromCookies(): Promise<VUser | null> {
   if (!realUser) {
     return null;
   }
+
+  // The real user, before any impersonation: an admin browsing as someone
+  // else is themselves using the site, and must not mark that someone as
+  // having used it. after(), not a bare promise, so a pod shutting down
+  // finishes the write instead of dropping it.
+  after(() => recordActiveDay(realUser.id));
 
   // Check for impersonation (admin only)
   const impersonationToken = cookieStore.get(IMPERSONATION_COOKIE)?.value;
