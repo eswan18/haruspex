@@ -33,6 +33,11 @@ const ADMIN_SECTIONS: AdminSection[] = [
     description: "Review propositions submitted by forecasters.",
   },
   {
+    href: "/admin/stats",
+    title: "Stats",
+    description: "Users, sign-ups, forecasting activity and competitions at a glance.",
+  },
+  {
     href: "/admin/forecast-progress",
     title: "Forecast Progress",
     description: "See how far along each forecaster is in a competition.",
