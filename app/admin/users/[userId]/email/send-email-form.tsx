@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
+import { EmailBodyField } from "@/components/email-body-field/email-body-field";
 import { Field, FormSheet, Refusal } from "@/components/form-sheet/form-sheet";
 import { useToast } from "@/hooks/use-toast";
 import { sendManualEmail } from "@/lib/db_actions/admin-email";
@@ -99,20 +100,14 @@ export default function SendEmailForm({ user }: { user: VUser }) {
           />
         </Field>
 
-        <Field
-          label="Message"
-          htmlFor={bodyId}
-          hint="Plain text. Line breaks are kept as you type them."
-          count={[body.length, BODY_MAX_LENGTH]}
+        <EmailBodyField
+          id={bodyId}
+          value={body}
+          limit={BODY_MAX_LENGTH}
           error={form.formState.errors.body?.message}
-        >
-          <textarea
-            id={bodyId}
-            rows={12}
-            placeholder="Hi — just letting you know…"
-            {...form.register("body")}
-          />
-        </Field>
+          registration={form.register("body")}
+          placeholder="Write your message…"
+        />
 
         {error && <Refusal message={error} />}
 
