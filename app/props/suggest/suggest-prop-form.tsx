@@ -9,6 +9,7 @@ import { Field, FormSheet, Refusal } from "@/components/form-sheet/form-sheet";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useToast } from "@/hooks/use-toast";
 import { createSuggestedProp } from "@/lib/db_actions";
+import { describeThrownError } from "@/lib/thrown-error";
 
 const CLAIM_MAX = 500;
 const NOTES_MAX = 500;
@@ -65,7 +66,7 @@ export function SuggestPropForm() {
         setError(result.error);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setError(describeThrownError(err));
     } finally {
       setSaving(false);
     }

@@ -5,6 +5,7 @@ import {
   ServerActionResult,
   ServerActionResultWithValidation,
 } from "@/lib/server-action-result";
+import { describeThrownError } from "@/lib/thrown-error";
 import { useToast } from "@/hooks/use-toast";
 
 type ServerActionFunction<TParams, TResult> = (
@@ -85,7 +86,7 @@ export function useServerAction<TParams = void, TResult = void>(
       } catch (err) {
         // This should rarely happen as server actions should return results
         const errorMessage =
-          err instanceof Error ? err.message : "An unexpected error occurred";
+          describeThrownError(err, "An unexpected error occurred");
         setError(errorMessage);
 
         if (showToast) {

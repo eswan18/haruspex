@@ -11,6 +11,7 @@ import { Field, FormSheet, Refusal } from "@/components/form-sheet/form-sheet";
 import { useToast } from "@/hooks/use-toast";
 import { sendManualEmail } from "@/lib/db_actions/admin-email";
 import { BODY_MAX_LENGTH, SUBJECT_MAX_LENGTH } from "@/lib/manual-email";
+import { describeThrownError } from "@/lib/thrown-error";
 import { VUser } from "@/types/db_types";
 
 const formSchema = z.object({
@@ -72,7 +73,7 @@ export default function SendEmailForm({ user }: { user: VUser }) {
         setError(result.error);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setError(describeThrownError(err));
     } finally {
       setSaving(false);
     }
