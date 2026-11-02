@@ -115,6 +115,11 @@ export const entryCss = `
 }
 .hxp .optbox input::placeholder { color: var(--ink-faint); }
 .hxp .optbox .sign { font-family: var(--font-roboto-mono), ui-monospace, monospace; font-size: 0.8125rem; }
+/* iOS zooms the page when a field under 16px takes focus; on a touch screen
+   the typed percentage is 16px. The width is in ch, so it grows with it. */
+@media (pointer: coarse) {
+  .hxp .optbox input, .hxp .optbox .sign { font-size: 1rem; }
+}
 `;
 
 /** The rule and its ticks, drawn the same way wherever a scale appears. */

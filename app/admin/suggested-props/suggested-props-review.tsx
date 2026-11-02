@@ -67,7 +67,9 @@ const ownCss = `
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 1.5rem;
+  /* on a phone the actions drop below the byline rather than crushing it */
+  flex-wrap: wrap;
+  gap: 0.75rem 1.5rem;
   padding-top: 1rem;
 }
 .hxp .sug .by {

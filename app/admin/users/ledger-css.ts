@@ -37,7 +37,7 @@ export const ledgerCss = `
   flex: 0 1 calc(50% - 1.5rem);
   min-width: 0;
   font-family: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
-  font-size: 0.9375rem;
+  font-size: 1rem;
   line-height: 1.5;
   color: var(--ink);
   background: none;

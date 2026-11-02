@@ -32,7 +32,9 @@ export const userFlagsCss = `
 }
 .hxp .urow {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 5.5rem;
+  /* auto, not a fixed track: the On/Off toggle is ~6.7rem and a fixed 5.5rem
+     let it hang past the row's hairline */
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 0 1.5rem;
   align-items: baseline;
   padding: 0.625rem 0;

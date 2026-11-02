@@ -129,5 +129,8 @@ export const rowCss = `
   .hxp .comp .ends { display: none; }
   .hxp .comphead > span:first-child { grid-column: 1 / -1; }
   .hxp .comphead > span:not(:first-child) { display: none; }
+  /* the way back and the new-competition button stack, or the button is
+     pushed past the trim and clipped */
+  .hxp h2.kicker .tools { flex-wrap: wrap; justify-content: flex-end; gap: 0.25rem 1.5rem; }
 }
 `;
