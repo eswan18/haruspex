@@ -52,7 +52,7 @@ const ownCss = `
 .hxp .filters .find {
   flex: 1 1 12rem;
   font-family: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
-  font-size: 0.9375rem;
+  font-size: 1rem;
   color: var(--ink);
   background: none;
   border: 0;
@@ -88,7 +88,6 @@ const ownCss = `
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--ink-faint);
-  white-space: nowrap;
 }
 .hxp .entryrow .tags .todo { color: var(--red-text); }
 

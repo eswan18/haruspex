@@ -359,6 +359,12 @@
   color: var(--riso-ink);
   font-weight: 600;
 }
+/* The signed-in bar is ~367px of fixed controls, so under that the icons on
+   the right ran into the gutter (360) and off the page (320). The name says
+   Haruspex on its own; the gauge mark is the part that can go. */
+@media (max-width: 23rem) {
+  .riso-nav .riso-wordmark > svg { display: none; }
+}
 /* the rule lives on the link cluster, not the mark, so it can't dangle when
    the cluster is absent (signed out) or hidden (below md). */
 .riso-nav .riso-navlinks {
@@ -582,6 +588,11 @@
 .hxf .field .pick:focus {
   border-bottom-color: var(--ink);
 }
+/* iOS zooms the whole page when a control under 16px takes focus, and leaves
+   it zoomed. Touch screens get the select at 16px; a mouse keeps the label size. */
+@media (pointer: coarse) {
+  .hxf .field .pick { font-size: 1rem; }
+}
 
 .hxf .field .under {
   display: flex;
@@ -625,7 +636,10 @@
 .hxf .submitrow {
   display: flex;
   align-items: center;
-  gap: 1.5rem;
+  /* a long secondary link ("Send a test to me") drops under the plate at 320px
+     rather than pushing the row past the trim */
+  flex-wrap: wrap;
+  gap: 1rem 1.5rem;
   padding-top: 2.5rem;
 }
 .hxf .submit {
@@ -948,7 +962,8 @@
   width: 3rem;
   text-align: center;
   font-family: var(--font-roboto-mono), ui-monospace, monospace;
-  font-size: 0.8125rem;
+  /* 16px, or iOS zooms the page on focus and the calendar slides off-screen */
+  font-size: 1rem;
   font-variant-numeric: tabular-nums;
   color: var(--riso-ink);
   background: none;

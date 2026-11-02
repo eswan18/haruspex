@@ -96,6 +96,8 @@ export const axisCss = `
   font-weight: 600;
   border-bottom: 0;
 }
+/* the kind label is two short words; the question wraps, the label does not */
+.hxp .grouprow .mono { flex: none; white-space: nowrap; }
 
 /* the plot: the scale itself, gridlines at the quarters, a mark for you, and
    a tail to the truth. Without the rule running the full width the awaiting
@@ -205,9 +207,13 @@ export const axisCss = `
 /* On a phone the scale is the only thing that needs the full width, so it
    drops to a line of its own and whatever names the row stays on the line
    above it. The figure has to be placed explicitly: it comes after the plot in
-   the markup, so auto-placement would otherwise push it onto a third line. */
+   the markup, so auto-placement would otherwise push it onto a third line.
+   The open variant has no figure column, and has to be named here: its
+   desktop rule is the more specific one, so the plain .cols override never
+   reached it and its 28rem scale squeezed the claim to a word per line. */
 @media (max-width: 46rem) {
   .hxp .cols { grid-template-columns: minmax(0, 1fr) 3rem; gap: 0.25rem 0.75rem; }
+  .hxp .cols.open { grid-template-columns: minmax(0, 1fr); gap: 0.25rem 0; }
   .hxp .axis-head .ticks, .hxp .plot { grid-column: 1 / -1; grid-row: 2; }
   .hxp .axis-head .lbl.r { display: none; }
   .hxp .plotrow .fig { grid-column: 2; grid-row: 1; }
