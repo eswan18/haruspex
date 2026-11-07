@@ -25,11 +25,22 @@ import {
 export type CompetitionRole = "admin" | "forecaster";
 
 /**
- * Get all members of a competition with user details
+ * A row of the roster as a reader receives it. The email is null unless the
+ * reader may manage the competition: members' addresses are not something a
+ * fellow forecaster needs, and stripping them here (rather than only hiding
+ * them in the UI) keeps them out of the server action's response.
+ */
+export type CompetitionMemberRow = Omit<VCompetitionMember, "user_email"> & {
+  user_email: string | null;
+};
+
+/**
+ * Get all members of a competition with user details. Emails are included only
+ * for competition admins and site admins.
  */
 export async function getCompetitionMembers(
   competitionId: number,
-): Promise<ServerActionResult<VCompetitionMember[]>> {
+): Promise<ServerActionResult<CompetitionMemberRow[]>> {
   const currentUser = await getUserFromCookies();
   logger.debug("Getting competition members", {
     competitionId,
@@ -38,7 +49,7 @@ export async function getCompetitionMembers(
 
   const startTime = Date.now();
   try {
-    const members = await withRLS(currentUser?.id, async (trx) => {
+    const rows = await withRLS(currentUser?.id, async (trx) => {
       return trx
         .selectFrom("v_competition_members")
         .selectAll()
@@ -47,6 +58,16 @@ export async function getCompetitionMembers(
         .orderBy("user_name", "asc")
         .execute();
     });
+
+    // The same rule that gates managing the roster: a site admin, or an admin
+    // of this competition (whose own row is in the result if they are one).
+    const canSeeEmails =
+      !!currentUser &&
+      (currentUser.is_admin ||
+        rows.some((m) => m.user_id === currentUser.id && m.role === "admin"));
+    const members: CompetitionMemberRow[] = canSeeEmails
+      ? rows
+      : rows.map((m) => ({ ...m, user_email: null }));
 
     const duration = Date.now() - startTime;
     logger.info(`Retrieved ${members.length} competition members`, {
