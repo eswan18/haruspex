@@ -53,6 +53,7 @@ import {
   deleteCompetition,
 } from "@/lib/db_actions/competitions";
 import {
+  getCompetitionMembers,
   addCompetitionMemberById,
   updateMemberRole,
   removeCompetitionMember,
@@ -548,6 +549,46 @@ describe("user actions under row-level security", () => {
             competitionId: comp.id,
             userId: newcomer.id,
           }),
+        );
+      },
+    );
+  });
+
+  describe("the members roster of a private competition", () => {
+    async function setup() {
+      const compAdmin = await factory.createUser();
+      const forecaster = await factory.createUser();
+      const comp = await openCompetition(true);
+      await addMember(comp.id, compAdmin.id, "admin");
+      await addMember(comp.id, forecaster.id, "forecaster");
+      return { compAdmin, forecaster, comp };
+    }
+
+    ifRunningContainerTestsIt(
+      "withholds every member's email from a forecaster",
+      async () => {
+        const { forecaster, comp } = await setup();
+        actAs(forecaster);
+
+        const result = await getCompetitionMembers(comp.id);
+        expectOk(result);
+        if (!result.success) return;
+        expect(result.data).toHaveLength(2);
+        expect(result.data.map((m) => m.user_email)).toEqual([null, null]);
+      },
+    );
+
+    ifRunningContainerTestsIt(
+      "gives a competition admin every member's email",
+      async () => {
+        const { compAdmin, forecaster, comp } = await setup();
+        actAs(compAdmin);
+
+        const result = await getCompetitionMembers(comp.id);
+        expectOk(result);
+        if (!result.success) return;
+        expect(new Set(result.data.map((m) => m.user_email))).toEqual(
+          new Set([compAdmin.email, forecaster.email]),
         );
       },
     );

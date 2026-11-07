@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import Link from "next/link";
 
 import { sheetCss } from "@/components/prop-list/sheet";
-import type { VCompetitionMember } from "@/types/db_types";
+import type { CompetitionMemberRow } from "@/lib/db_actions/competition-members";
 
 import { MembersSheet, membersCss } from "./members-sheet";
 
@@ -13,7 +13,7 @@ const member = (
   name: string,
   email: string,
   role: "admin" | "forecaster",
-): VCompetitionMember => ({
+): CompetitionMemberRow => ({
   membership_id: id * 10,
   competition_id: 9,
   user_id: id,
@@ -28,7 +28,8 @@ const member = (
   user_picture_url: null,
 });
 
-const members: VCompetitionMember[] = [
+/** What an admin receives: every member's email. */
+const members: CompetitionMemberRow[] = [
   member(1, "Akshay Rangesh", "akshay@example.com", "admin"),
   member(2, "Carly Fiorina", "carly.fiorina@example.com", "admin"),
   member(3, "Ethan Swan", "ethanpswan@example.com", "forecaster"),
@@ -82,10 +83,15 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+/** What a forecaster receives: the server strips every email, their own included. */
+const membersWithoutEmails = members.map((m) => ({ ...m, user_email: null }));
+
 const shared = { competitionId: 9, currentUserId: CURRENT_USER_ID, members };
 
-/** A forecaster's view: the roster, no row menus. */
-export const Default: Story = { args: { ...shared, canManage: false } };
+/** A forecaster's view: names only, no emails, no row menus. */
+export const Default: Story = {
+  args: { ...shared, members: membersWithoutEmails, canManage: false },
+};
 
 /** A competition admin can promote, demote and remove. */
 export const AsAdmin: Story = { args: { ...shared, canManage: true } };

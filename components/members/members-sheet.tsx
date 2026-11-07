@@ -24,9 +24,9 @@ import { useServerAction } from "@/hooks/use-server-action";
 import {
   removeCompetitionMember,
   updateMemberRole,
+  type CompetitionMemberRow,
   type CompetitionRole,
 } from "@/lib/db_actions/competition-members";
-import type { VCompetitionMember } from "@/types/db_types";
 
 export const membersCss = `
 /* Name over email, and the exception marked. A portrait square was tried and
@@ -131,7 +131,7 @@ function MemberRow({
   isOnlyAdmin,
   onChange,
 }: {
-  member: VCompetitionMember;
+  member: CompetitionMemberRow;
   competitionId: number;
   currentUserId: number;
   canManage: boolean;
@@ -165,7 +165,7 @@ function MemberRow({
       <div className={isYou ? "roster mine" : "roster"}>
         <span className="who">
           <span className="nm">{member.user_name}</span>
-          <span className="em">{member.user_email}</span>
+          {member.user_email && <span className="em">{member.user_email}</span>}
         </span>
         <span className="role">{isMemberAdmin ? "Admin" : ""}</span>
         {manageable ? (
@@ -268,7 +268,7 @@ export function MembersSheet({
   canManage,
   onChange,
 }: {
-  members: VCompetitionMember[];
+  members: CompetitionMemberRow[];
   competitionId: number;
   currentUserId: number;
   /** True for a competition admin: the row menus appear only then. */

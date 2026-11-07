@@ -6,9 +6,11 @@ import { useCallback, useEffect, useState, useTransition } from "react";
 import { InviteMemberDialog } from "@/components/members";
 import { MembersSheet, membersCss } from "@/components/members/members-sheet";
 import { sheetCss } from "@/components/prop-list/sheet";
-import { getCompetitionMembers } from "@/lib/db_actions/competition-members";
+import {
+  getCompetitionMembers,
+  type CompetitionMemberRow,
+} from "@/lib/db_actions/competition-members";
 import { settleAction } from "@/lib/thrown-error";
-import type { VCompetitionMember } from "@/types/db_types";
 
 const ownCss = `
 .hxp .failed { color: var(--red-text); padding-top: 1.5rem; }
@@ -33,7 +35,7 @@ export function MembersPanel({
   canManage: boolean;
   backHref: string;
 }) {
-  const [members, setMembers] = useState<VCompetitionMember[] | null>(null);
+  const [members, setMembers] = useState<CompetitionMemberRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, startLoading] = useTransition();
   const [inviting, setInviting] = useState(false);
