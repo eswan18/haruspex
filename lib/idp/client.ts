@@ -188,7 +188,7 @@ let jwksCacheExpiry: number = 0;
  * Get the JWKS for validating IDP tokens.
  * Caches the JWKS for 1 hour.
  */
-async function getJWKS(): Promise<jose.JWTVerifyGetKey> {
+export async function getJWKS(): Promise<jose.JWTVerifyGetKey> {
   // Return cached JWKS if still valid
   if (jwksCache && Date.now() < jwksCacheExpiry) {
     return jwksCache;
