@@ -1,9 +1,12 @@
 "use server";
 import { getUserFromCookies } from "../get-user";
 import { revalidatePath } from "next/cache";
+import type { Transaction } from "kysely";
 import {
   Competition,
+  Database,
   VProp,
+  VUser,
   PropUpdate,
   NewProp,
   NewResolution,
@@ -198,6 +201,57 @@ export async function getProps({
 }
 
 /**
+ * Why `user` may not resolve, unresolve or delete a resolution of `prop`, as
+ * the error to return, or null if they may (`canResolveProp`).
+ *
+ * The manage_resolutions policy refuses the write regardless. Asking first
+ * turns that into a reason: a refused insert would surface as a database
+ * error, and a refused delete as a silent success, since RLS just filters the
+ * rows out.
+ *
+ * Not exported: every export of a "use server" file is callable from the
+ * browser.
+ */
+async function resolveRefusal(
+  trx: Transaction<Database>,
+  user: VUser,
+  prop: {
+    prop_id?: number;
+    prop_user_id: number | null;
+    competition_id: number | null;
+  },
+  verb: "resolve" | "unresolve",
+): Promise<ServerActionResult<never> | null> {
+  const membership =
+    prop.competition_id === null
+      ? undefined
+      : await trx
+          .selectFrom("competition_members")
+          .select("role")
+          .where("competition_id", "=", prop.competition_id)
+          .where("user_id", "=", user.id)
+          .executeTakeFirst();
+  if (
+    canResolveProp({
+      userId: user.id,
+      ownerId: prop.prop_user_id,
+      role: membership?.role ?? null,
+      isSiteAdmin: user.is_admin,
+    })
+  ) {
+    return null;
+  }
+  logger.warn(`Unauthorized attempt to ${verb} prop`, {
+    propId: prop.prop_id,
+    currentUserId: user.id,
+  });
+  return error(
+    `Only the prop's owner, a competition admin or a site admin can ${verb} it`,
+    ERROR_CODES.UNAUTHORIZED,
+  );
+}
+
+/**
  * Records a prop's outcome.
  *
  * Yes/no props resolve with a single `resolution` and no `outcomes`; choice
@@ -245,41 +299,15 @@ export async function resolveProp({
     const result = await withRLSAction(currentUser.id, async (trx) => {
       const prop = await trx
         .selectFrom("v_props")
-        .select(["prop_kind", "prop_user_id", "competition_id"])
+        .select(["prop_id", "prop_kind", "prop_user_id", "competition_id"])
         .where("prop_id", "=", propId)
         .executeTakeFirst();
       if (!prop) {
         return error("Proposition not found", ERROR_CODES.NOT_FOUND);
       }
 
-      // The manage_resolutions policy refuses the write too; asking first
-      // gives the caller a reason instead of a database error.
-      const membership =
-        prop.competition_id === null
-          ? undefined
-          : await trx
-              .selectFrom("competition_members")
-              .select("role")
-              .where("competition_id", "=", prop.competition_id)
-              .where("user_id", "=", currentUser.id)
-              .executeTakeFirst();
-      if (
-        !canResolveProp({
-          userId: currentUser.id,
-          ownerId: prop.prop_user_id,
-          role: membership?.role ?? null,
-          isSiteAdmin: currentUser.is_admin,
-        })
-      ) {
-        logger.warn("Unauthorized attempt to resolve prop", {
-          propId,
-          currentUserId: currentUser.id,
-        });
-        return error(
-          "Only the prop's owner or a competition admin can resolve it",
-          ERROR_CODES.UNAUTHORIZED,
-        );
-      }
+      const refusal = await resolveRefusal(trx, currentUser, prop, "resolve");
+      if (refusal) return refusal;
 
       const kind = prop.prop_kind;
       resolvedKind = kind;
@@ -432,12 +460,38 @@ export async function unresolveProp({
 
   const startTime = Date.now();
   try {
-    await withRLS(currentUser?.id, async (trx) => {
-      await trx
+    if (!currentUser) {
+      return error(
+        "You must be logged in to unresolve propositions",
+        ERROR_CODES.UNAUTHORIZED,
+      );
+    }
+
+    const result = await withRLSAction(currentUser.id, async (trx) => {
+      const prop = await trx
+        .selectFrom("v_props")
+        .select(["prop_id", "prop_user_id", "competition_id"])
+        .where("prop_id", "=", propId)
+        .executeTakeFirst();
+      if (!prop) {
+        return error("Proposition not found", ERROR_CODES.NOT_FOUND);
+      }
+      const refusal = await resolveRefusal(trx, currentUser, prop, "unresolve");
+      if (refusal) return refusal;
+
+      const deleted = await trx
         .deleteFrom("resolutions")
         .where("prop_id", "=", propId)
-        .execute();
+        .executeTakeFirst();
+      if (deleted.numDeletedRows === BigInt(0)) {
+        return error(
+          `Proposition ${propId} has no resolution`,
+          ERROR_CODES.NOT_FOUND,
+        );
+      }
+      return success(undefined);
     });
+    if (!result.success) return result;
 
     const duration = Date.now() - startTime;
     logger.info("Prop unresolved successfully", {
@@ -790,9 +844,40 @@ export async function deleteResolution({
 
   const startTime = Date.now();
   try {
-    await withRLS(currentUser?.id, async (trx) => {
-      await trx.deleteFrom("resolutions").where("id", "=", id).execute();
+    if (!currentUser) {
+      return error(
+        "You must be logged in to delete resolutions",
+        ERROR_CODES.UNAUTHORIZED,
+      );
+    }
+
+    const result = await withRLSAction(currentUser.id, async (trx) => {
+      const prop = await trx
+        .selectFrom("resolutions")
+        .innerJoin("props", "props.id", "resolutions.prop_id")
+        .select([
+          "props.id as prop_id",
+          "props.user_id as prop_user_id",
+          "props.competition_id",
+        ])
+        .where("resolutions.id", "=", id)
+        .executeTakeFirst();
+      if (!prop) {
+        return error("Resolution not found", ERROR_CODES.NOT_FOUND);
+      }
+      const refusal = await resolveRefusal(trx, currentUser, prop, "unresolve");
+      if (refusal) return refusal;
+
+      const deleted = await trx
+        .deleteFrom("resolutions")
+        .where("id", "=", id)
+        .executeTakeFirst();
+      if (deleted.numDeletedRows === BigInt(0)) {
+        return error("Resolution not found", ERROR_CODES.NOT_FOUND);
+      }
+      return success(undefined);
     });
+    if (!result.success) return result;
 
     const duration = Date.now() - startTime;
     logger.info("Resolution deleted successfully", {

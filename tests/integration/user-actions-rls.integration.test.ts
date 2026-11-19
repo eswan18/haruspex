@@ -815,6 +815,103 @@ describe("user actions under row-level security", () => {
       },
     );
 
+    /** A resolution written by `author`, seeded as the table owner. */
+    async function seedResolution(propId: number, authorId: number) {
+      const row = await db
+        .insertInto("resolutions")
+        .values({
+          prop_id: propId,
+          resolution: true,
+          notes: null,
+          user_id: authorId,
+        })
+        .returning("id")
+        .executeTakeFirstOrThrow();
+      getTestTracker().trackId("resolutions", row.id);
+      return row.id;
+    }
+
+    /** A private competition with an admin, a forecaster and one prop. */
+    async function privateSetup() {
+      const compAdmin = await factory.createUser();
+      const member = await factory.createUser();
+      const comp = await openCompetition(true);
+      await addMember(comp.id, compAdmin.id, "admin");
+      await addMember(comp.id, member.id, "forecaster");
+      const prop = await factory.createCompetitionProp(
+        comp.id,
+        privateDeadlines(),
+      );
+      return { compAdmin, member, comp, prop };
+    }
+
+    ifRunningContainerTestsIt(
+      "refuses a forecaster unresolving a private competition's prop",
+      async () => {
+        const { compAdmin, member, prop } = await privateSetup();
+        await seedResolution(prop.id, compAdmin.id);
+        actAs(member);
+
+        const result = await unresolveProp({ propId: prop.id });
+
+        expect(result.success).toBe(false);
+        if (!result.success) expect(result.code).toBe("UNAUTHORIZED");
+        expect(await resolutionsFor(prop.id)).toHaveLength(1);
+      },
+    );
+
+    ifRunningContainerTestsIt(
+      "refuses a reader deleting a public season's resolution",
+      async () => {
+        const admin = await factory.createAdminUser();
+        const reader = await factory.createUser();
+        const comp = await openCompetition(false);
+        const prop = await factory.createCompetitionProp(comp.id);
+        const resolutionId = await seedResolution(prop.id, admin.id);
+        actAs(reader);
+
+        const result = await deleteResolution({ id: resolutionId });
+
+        expect(result.success).toBe(false);
+        if (!result.success) expect(result.code).toBe("UNAUTHORIZED");
+        expect(await resolutionsFor(prop.id)).toHaveLength(1);
+      },
+    );
+
+    ifRunningContainerTestsIt(
+      "reports unresolving a prop with no resolution as not found",
+      async () => {
+        const { compAdmin, prop } = await privateSetup();
+        actAs(compAdmin);
+
+        const result = await unresolveProp({ propId: prop.id });
+
+        expect(result.success).toBe(false);
+        if (!result.success) expect(result.code).toBe("NOT_FOUND");
+      },
+    );
+
+    ifRunningContainerTestsIt(
+      "lets a competition admin overwrite another admin's resolution",
+      async () => {
+        const { compAdmin, comp, prop } = await privateSetup();
+        const otherAdmin = await factory.createUser();
+        await addMember(comp.id, otherAdmin.id, "admin");
+        await seedResolution(prop.id, otherAdmin.id);
+        actAs(compAdmin);
+
+        expectOk(
+          await resolveProp({
+            propId: prop.id,
+            resolution: false,
+            overwrite: true,
+          }),
+        );
+        const [row] = await resolutionsFor(prop.id);
+        expect(row.resolution).toBe(false);
+      },
+    );
+
     ifRunningContainerTestsIt(
       "lets a site admin resolve a public season's prop",
       async () => {
