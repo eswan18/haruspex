@@ -1,6 +1,8 @@
 import "server-only";
 import * as jose from "jose";
 
+import { logger } from "@/lib/logger";
+
 import { RefreshTokenRejectedError } from "./errors";
 
 function requiredEnv(name: string): string {
@@ -213,8 +215,24 @@ export async function validateIDPToken(token: string): Promise<IDPClaims> {
 
   const { payload } = await jose.jwtVerify(token, jwks, {
     issuer: IDP_PUBLIC_URL,
-    // We don't strictly validate audience since it varies by client
   });
+  const audiences =
+    typeof payload.aud === "string" ? [payload.aud] : (payload.aud ?? []);
+
+  // identity signs every app's tokens with the same key, so the issuer alone
+  // says nothing about which app a token is for. The web login's tokens carry
+  // the haruspex client's default resource as their aud (IDP_AUDIENCE); any
+  // other aud is another app's token -- another service's MCP connector, or
+  // identity's own API -- and must not become a haruspex session. Unset
+  // (local dev) leaves the audience unchecked.
+  const webAudience = process.env.IDP_AUDIENCE?.trim();
+  if (webAudience && !audiences.includes(webAudience)) {
+    logger.warn("Refused a token minted for another audience", {
+      sub: payload.sub,
+      aud: payload.aud,
+    });
+    throw new Error("Token audience is not this app");
+  }
 
   return {
     sub: payload.sub as string,

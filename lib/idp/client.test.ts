@@ -10,6 +10,10 @@ vi.mock("jose", () => ({
   base64url: { encode: vi.fn() },
 }));
 
+vi.mock("@/lib/logger", () => ({
+  logger: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() },
+}));
+
 describe("IDP Client", () => {
   beforeEach(() => {
     vi.resetModules();
@@ -208,6 +212,91 @@ describe("IDP Client", () => {
 
       await expect(refreshAccessToken("good-token")).resolves.toMatchObject({
         access_token: "a",
+      });
+    });
+  });
+
+  describe("validateIDPToken", () => {
+    // identity mints the web login's tokens for the haruspex client's default
+    // resource. Any other aud is a token for some other app (another service's
+    // MCP connector, identity's own admin API, ...) that must not become a
+    // haruspex session.
+    const WEB_AUD = "ethanswan:haruspex";
+    const TOKEN = "header.payload.signature";
+
+    async function verifyingWith(aud: unknown) {
+      const jose = await import("jose");
+      vi.mocked(jose.jwtVerify).mockResolvedValue({
+        payload: {
+          sub: "user-123",
+          username: "u",
+          email: "u@example.com",
+          email_verified: true,
+          iss: "https://identity.example.com",
+          aud,
+          exp: 2_000_000_000,
+          iat: 1_000_000_000,
+        },
+        protectedHeader: { alg: "ES256" },
+      } as never);
+      return import("./client");
+    }
+
+    it("accepts a token minted for the web client", async () => {
+      vi.stubEnv("IDP_AUDIENCE", WEB_AUD);
+      const { validateIDPToken } = await verifyingWith(WEB_AUD);
+      await expect(validateIDPToken(TOKEN)).resolves.toMatchObject({
+        sub: "user-123",
+      });
+    });
+
+    it("accepts it inside an aud array", async () => {
+      vi.stubEnv("IDP_AUDIENCE", ` ${WEB_AUD} `);
+      const { validateIDPToken } = await verifyingWith(["other", WEB_AUD]);
+      await expect(validateIDPToken(TOKEN)).resolves.toMatchObject({
+        sub: "user-123",
+      });
+    });
+
+    it("rejects another app's token", async () => {
+      vi.stubEnv("IDP_AUDIENCE", WEB_AUD);
+      const { validateIDPToken } = await verifyingWith(
+        "https://sensibility.money/mcp",
+      );
+      await expect(validateIDPToken(TOKEN)).rejects.toThrow(/audience/);
+    });
+
+    it("rejects a token for identity itself", async () => {
+      vi.stubEnv("IDP_AUDIENCE", WEB_AUD);
+      const { validateIDPToken } = await verifyingWith(
+        "https://identity.example.com",
+      );
+      await expect(validateIDPToken(TOKEN)).rejects.toThrow(/audience/);
+    });
+
+    it("rejects a token with no aud", async () => {
+      vi.stubEnv("IDP_AUDIENCE", WEB_AUD);
+      const { validateIDPToken } = await verifyingWith(undefined);
+      await expect(validateIDPToken(TOKEN)).rejects.toThrow(/audience/);
+    });
+
+    it("logs the refusal without the token", async () => {
+      vi.stubEnv("IDP_AUDIENCE", WEB_AUD);
+      const { validateIDPToken } = await verifyingWith("someone-else");
+      const { logger } = await import("@/lib/logger");
+      vi.mocked(logger.warn).mockClear();
+      await validateIDPToken(TOKEN).catch(() => {});
+      expect(logger.warn).toHaveBeenCalled();
+      expect(JSON.stringify(vi.mocked(logger.warn).mock.calls)).not.toContain(
+        TOKEN,
+      );
+    });
+
+    it("leaves the audience unchecked when IDP_AUDIENCE is unset", async () => {
+      vi.stubEnv("IDP_AUDIENCE", "");
+      const { validateIDPToken } = await verifyingWith("anything");
+      await expect(validateIDPToken(TOKEN)).resolves.toMatchObject({
+        sub: "user-123",
       });
     });
   });
