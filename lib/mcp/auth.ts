@@ -22,6 +22,7 @@ import { mcpConfig, READ_SCOPE, SCOPES, type McpConfig } from "./config";
  *
  * - no bearer token: 401 pointing at the protected resource metadata;
  * - a token that fails {@link verifyAccessToken}: 401 `invalid_token`;
+ * - identity's keys cannot be fetched: 503 with `Retry-After`, never a 401;
  * - a token with neither haruspex scope: 403 `insufficient_scope`;
  * - a `sub` with no haruspex user, or a deactivated one: 403. Users are never
  *   created here -- the browser sign-in does that.
@@ -39,6 +40,31 @@ export class InvalidTokenError extends Error {
   }
 }
 
+/**
+ * identity's keys could not be fetched, so no verdict on the token was
+ * reached. The message is for logs.
+ */
+export class IdentityUnavailableError extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = "IdentityUnavailableError";
+  }
+}
+
+/**
+ * The jose error codes that come from fetching or parsing the remote key set,
+ * never from the token: a timeout, a non-2xx or unparseable response (jose
+ * throws a bare JOSEError, ERR_JOSE_GENERIC, for both), or a malformed set.
+ * Matched by code because every jose code starts `ERR_J`, outages included.
+ * Every other jose error -- bad signature, expired, wrong claims, no key for
+ * the token's `kid` -- is a verdict on the token.
+ */
+const KEY_SET_UNAVAILABLE = new Set([
+  "ERR_JWKS_TIMEOUT",
+  "ERR_JOSE_GENERIC",
+  "ERR_JWKS_INVALID",
+]);
+
 export interface VerifiedToken {
   sub: string;
   clientId: string;
@@ -53,7 +79,8 @@ export interface VerifiedToken {
  * same), `iss` exactly the issuer, `aud` containing the resource exactly, and
  * `exp`, `iat`, `sub` and `client_id` present.
  *
- * Throws {@link InvalidTokenError} otherwise.
+ * Throws {@link InvalidTokenError} otherwise, or
+ * {@link IdentityUnavailableError} when identity's keys cannot be fetched.
  */
 export async function verifyAccessToken(
   token: string,
@@ -70,10 +97,21 @@ export async function verifyAccessToken(
       requiredClaims: ["exp", "iat", "sub", "client_id"],
     }));
   } catch (e) {
-    if (e instanceof jose.errors.JOSEError) {
+    if (
+      e instanceof jose.errors.JOSEError &&
+      !KEY_SET_UNAVAILABLE.has(e.code)
+    ) {
       throw new InvalidTokenError(`${e.code}: ${e.message}`);
     }
-    throw e;
+    // A key set outage, or anything else from the key function (a network
+    // error from fetch is a plain TypeError).
+    const reason =
+      e instanceof jose.errors.JOSEError
+        ? `${e.code}: ${e.message}`
+        : e instanceof Error
+          ? `${e.name}: ${e.message}`
+          : String(e);
+    throw new IdentityUnavailableError(reason, { cause: e });
   }
   const { sub, client_id: clientId, scope, exp } = payload;
   if (typeof sub !== "string" || !sub) {
@@ -159,6 +197,19 @@ export async function authenticate(
       deps.keys ?? (await defaultKeys()),
     );
   } catch (e) {
+    if (e instanceof IdentityUnavailableError) {
+      // Not a 401: that would make Claude drop the connection and restart a
+      // sign-in that cannot succeed while identity is down.
+      logger.error("MCP could not fetch identity's keys", e);
+      return Response.json(
+        {
+          error: "temporarily_unavailable",
+          error_description:
+            "The sign-in service (identity) is unreachable. Retry shortly.",
+        },
+        { status: 503, headers: { "Retry-After": "30" } },
+      );
+    }
     if (!(e instanceof InvalidTokenError)) throw e;
     logger.info("MCP token refused", { reason: e.message });
     return bearerAuthChallengeResponse(

@@ -8,6 +8,7 @@ vi.mock("@/lib/logger", () => ({
 
 import {
   authenticate,
+  IdentityUnavailableError,
   InvalidTokenError,
   verifyAccessToken,
   type VerifiedToken,
@@ -347,5 +348,90 @@ describe("mcpConfig", () => {
     } finally {
       vi.unstubAllEnvs();
     }
+  });
+});
+
+describe("when identity's keys cannot be fetched", () => {
+  const failing = (error: unknown): jose.JWTVerifyGetKey =>
+    vi.fn(async () => {
+      throw error;
+    });
+
+  const outages: [string, unknown][] = [
+    ["a network error", new TypeError("fetch failed")],
+    ["a timeout", new jose.errors.JWKSTimeout()],
+    [
+      "a non-2xx response",
+      new jose.errors.JOSEError(
+        "Expected 200 OK from the JSON Web Key Set HTTP response",
+      ),
+    ],
+    ["a malformed key set", new jose.errors.JWKSInvalid()],
+  ];
+
+  it.each(outages)(
+    "verifyAccessToken throws IdentityUnavailableError on %s",
+    async (_, error) => {
+      const token = await makeToken();
+      await expect(
+        verifyAccessToken(token, config, failing(error)),
+      ).rejects.toBeInstanceOf(IdentityUnavailableError);
+    },
+  );
+
+  it.each(outages)(
+    "authenticate answers 503 with Retry-After on %s",
+    async (_, error) => {
+      const token = await makeToken();
+      const response = await authenticate(bearer(token), {
+        config,
+        keys: failing(error),
+        findUser: vi.fn(async () => user()),
+      });
+      const res = response as Response;
+      expect(res.status).toBe(503);
+      expect(res.headers.get("Retry-After")).toBe("30");
+      expect(res.headers.get("WWW-Authenticate")).toBeNull();
+      const body = await res.text();
+      expect(body).toMatch(/unreachable/i);
+      expect(body).toMatch(/retry/i);
+      expect(body).not.toContain(token);
+    },
+  );
+
+  it("still answers 401 when no key matches the token's kid", async () => {
+    const token = await makeToken();
+    const response = await authenticate(bearer(token), {
+      config,
+      keys: failing(new jose.errors.JWKSNoMatchingKey()),
+      findUser: vi.fn(async () => user()),
+    });
+    expect((response as Response).status).toBe(401);
+  });
+
+  it("still answers 401 for a token signed by another key", async () => {
+    const other = await jose.generateKeyPair("ES256");
+    const now = Math.floor(Date.now() / 1000);
+    const token = await new jose.SignJWT({
+      iss: config.issuer,
+      aud: config.resource,
+      sub: "idp-user-1",
+      client_id: "claude",
+      scope: "haruspex:read",
+      iat: now,
+      exp: now + 300,
+    })
+      .setProtectedHeader({ alg: "ES256", typ: "at+jwt", kid: "test-key" })
+      .sign(other.privateKey);
+    const response = await authenticate(bearer(token), {
+      config,
+      keys,
+      findUser: vi.fn(async () => user()),
+    });
+    const res = response as Response;
+    expect(res.status).toBe(401);
+    expect(res.headers.get("WWW-Authenticate")).toContain(
+      'error="invalid_token"',
+    );
   });
 });
