@@ -13,6 +13,39 @@ A NextJS app and database migrations, basically.
 
 In Vercel, with minimal customization.
 
+## MCP server
+
+`/mcp` lets an agent read and write props as the signed-in reader (see the MCP
+section of `CLAUDE.md`, and `docs/superpowers/specs/2026-11-19-mcp-server-design.md`).
+It needs `MCP_RESOURCE_URL` (set in each overlay's `configmap-env.yaml`) and
+`IDP_PUBLIC_URL`; without either it answers 503.
+
+### Rollout
+
+Not live until identity knows the resource. Register it in **both** identity
+databases (staging's is periodically overwritten by a copy of prod's, so a
+one-sided registration gets lost or does not apply):
+
+```bash
+identity-cli resource create --uri https://haruspex.fyi/mcp --name "Haruspex" \
+  --scope "haruspex:read=Read competitions and props" \
+  --scope "haruspex:write=Add and resolve props" --dynamic-clients
+
+identity-cli resource create --uri https://staging.haruspex.fyi/mcp --name "Haruspex (staging)" \
+  --scope "haruspex:read=Read competitions and props" \
+  --scope "haruspex:write=Add and resolve props" --dynamic-clients
+```
+
+Run each against prod's and staging's identity database. Then:
+
+- **Staging** is reachable only from the tailnet (as is staging identity), so
+  claude.ai cannot test it. From a tailnet machine:
+  `claude mcp add --transport http haruspex-staging https://staging.haruspex.fyi/mcp`
+- **Prod**: after `bif promote haruspex`, add `https://haruspex.fyi/mcp` as a
+  custom connector in claude.ai.
+
+Sign in to the site once with the account you test with; an unknown user gets 403.
+
 ## DB Schema
 
 ![Schema Diagram](docs/schema.png)

@@ -6,6 +6,7 @@ data:
   ENV: "prod"
   APP_BASE_URL: "https://haruspex.fyi"
   IDP_AUDIENCE: "ethanswan:haruspex"
+  MCP_RESOURCE_URL: "https://haruspex.fyi/mcp"
   IDP_BASE_URL: "http://identity.identity-prod.svc.cluster.local"
   IDP_PUBLIC_URL: "https://identity.ethanswan.com"
   PUBSUB_TOPIC: "haruspex-events-prod"

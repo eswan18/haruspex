@@ -6,6 +6,7 @@ data:
   ENV: "staging"
   APP_BASE_URL: "https://staging.haruspex.fyi"
   IDP_AUDIENCE: "ethanswan:haruspex"
+  MCP_RESOURCE_URL: "https://staging.haruspex.fyi/mcp"
   IDP_BASE_URL: "http://identity.identity-staging.svc.cluster.local"
   IDP_PUBLIC_URL: "https://identity-staging.tailc06f30.ts.net"
   PUBSUB_TOPIC: "haruspex-events-staging"

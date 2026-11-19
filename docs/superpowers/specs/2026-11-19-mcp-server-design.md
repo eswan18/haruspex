@@ -1,7 +1,7 @@
 # MCP Server: agent access to props via identity
 
 **Date:** 2026-11-19
-**Status:** Design, awaiting approval
+**Status:** Built; awaiting identity registration and end-to-end test.
 
 ## Intent
 
