@@ -236,8 +236,8 @@ export function buildMcpServer(caller: VUser): McpServer {
       outputSchema: propDetail,
       annotations: {
         readOnlyHint: false,
-        destructiveHint: true,
-        idempotentHint: true,
+        destructiveHint: false,
+        idempotentHint: false,
         openWorldHint: false,
       },
       scopeChallenge: writeScope,

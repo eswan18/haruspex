@@ -190,6 +190,14 @@ describe.each(["modern", "legacy"] as const)(
       });
       const create = listed.find((t) => t.name === "create_prop");
       expect(create?.description).toMatch(/private/i);
+      // Spec: neither write is idempotent; nothing is destructive.
+      for (const name of ["create_prop", "resolve_prop"]) {
+        const tool = listed.find((t) => t.name === name);
+        expect(tool?.annotations).toMatchObject({
+          destructiveHint: false,
+          idempotentHint: false,
+        });
+      }
       await client.close();
     });
 

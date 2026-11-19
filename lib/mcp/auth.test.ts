@@ -206,6 +206,11 @@ describe("authenticate", () => {
     expect(res.headers.get("WWW-Authenticate")).toBe(
       `Bearer resource_metadata="${METADATA}", scope="haruspex:read haruspex:write"`,
     );
+    // RFC 6750 §3.1: a request with no credentials gets no error code, in
+    // the header or the body.
+    const body = await res.json();
+    expect(body).not.toHaveProperty("error");
+    expect(body.error_description).toMatch(/sign in/i);
   });
 
   it("treats a non-Bearer Authorization header as no token", async () => {

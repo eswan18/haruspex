@@ -179,7 +179,9 @@ export async function authenticate(
   const token = bearerToken(request);
   if (!token) {
     return Response.json(
-      { error: "invalid_token", error_description: "Sign in required" },
+      // No `error` here: RFC 6750 §3.1 gives a credential-less request no
+      // error code, and the header (rightly) carries none either.
+      { error_description: "Sign in required" },
       {
         status: 401,
         headers: {

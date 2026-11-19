@@ -22,9 +22,11 @@ It needs `MCP_RESOURCE_URL` (set in each overlay's `configmap-env.yaml`) and
 
 ### Rollout
 
-Not live until identity knows the resource. Register it in **both** identity
-databases (staging's is periodically overwritten by a copy of prod's, so a
-one-sided registration gets lost or does not apply):
+Not live until identity knows the resource. Run **both** commands below (the
+prod URI and the staging URI) against **each** identity database, prod's and
+staging's -- four runs in all. Staging's identity database is periodically
+overwritten by a copy of prod's, so a registration made only in staging's is
+wiped by the next copy:
 
 ```bash
 identity-cli resource create --uri https://haruspex.fyi/mcp --name "Haruspex" \
@@ -36,7 +38,9 @@ identity-cli resource create --uri https://staging.haruspex.fyi/mcp --name "Haru
   --scope "haruspex:write=Add and resolve props" --dynamic-clients
 ```
 
-Run each against prod's and staging's identity database. Then:
+Then sign in once to the site in the same environment (staging.haruspex.fyi
+for staging, haruspex.fyi for prod) with the account you will connect as,
+before connecting; an unknown user gets 403. Then:
 
 - **Staging** is reachable only from the tailnet (as is staging identity), so
   claude.ai cannot test it. From a tailnet machine:
@@ -44,7 +48,8 @@ Run each against prod's and staging's identity database. Then:
 - **Prod**: after `bif promote haruspex`, add `https://haruspex.fyi/mcp` as a
   custom connector in claude.ai.
 
-Sign in to the site once with the account you test with; an unknown user gets 403.
+Revoking an MCP grant takes effect when its access token expires, not at
+once: `/mcp` verifies tokens locally and does not introspect them.
 
 ## DB Schema
 

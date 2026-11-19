@@ -31,8 +31,7 @@ function callerFor(ctx: McpRequestContext): VUser {
 
 const handler = createMcpHandler((ctx) => buildMcpServer(callerFor(ctx)), {
   legacy: "stateless",
-  onerror: (error) =>
-    logger.warn("MCP request failed", { error: error.message }),
+  onerror: (error) => logger.error("MCP request failed", error),
 });
 
 async function serve(request: Request): Promise<Response> {
