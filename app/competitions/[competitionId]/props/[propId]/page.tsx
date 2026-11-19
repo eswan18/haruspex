@@ -9,6 +9,7 @@ import { PropSheet } from "@/components/prop-sheet/prop-sheet";
 import { getForecasts, getPropById } from "@/lib/db_actions";
 import { getCurrentUserRole } from "@/lib/db_actions/competition-members";
 import { getPropStatusFromProp } from "@/lib/prop-status";
+import { canResolveProp } from "@/lib/prop-write-access";
 import { competitionAccess } from "../../access";
 import { AccessDenied } from "../../access-denied";
 
@@ -56,7 +57,12 @@ export default async function Page({
       currentUserId={user.id}
       canForecast={getPropStatusFromProp(prop) === "open"}
       canEdit={isAdmin || prop.prop_user_id === user.id}
-      canResolve={isAdmin || prop.prop_user_id === user.id}
+      canResolve={canResolveProp({
+        userId: user.id,
+        ownerId: prop.prop_user_id,
+        role: roleResult.success ? roleResult.data : null,
+        isSiteAdmin: user.is_admin,
+      })}
       back={{
         href: `/competitions/${competition.id}`,
         label: competition.name,

@@ -456,6 +456,21 @@ describe("choice props row-level security", () => {
             .execute(),
         ),
       ).rejects.toThrow(/row-level security policy/);
+      // ...nor by stamping it with their own id, which is what resolveProp
+      // writes: "it's mine because I wrote it" must not be a way in.
+      await expect(
+        asUser(rls, member.id, (trx) =>
+          trx
+            .insertInto("resolutions")
+            .values({
+              prop_id: prop.id,
+              resolution: null,
+              notes: null,
+              user_id: member.id,
+            })
+            .execute(),
+        ),
+      ).rejects.toThrow(/row-level security policy/);
       const afterFailedAttempt = await db
         .selectFrom("resolutions")
         .selectAll()
@@ -859,6 +874,73 @@ describe("choice props row-level security", () => {
           .where("id", "=", strangerForecastId)
           .execute(),
       ).toHaveLength(1);
+    },
+  );
+  // ---- manage_resolutions: a row stamped with the writer's own id ---------
+
+  ifRunningContainerTestsIt(
+    "gives a forecaster no hold over a resolution stamped with their own id",
+    async () => {
+      // The shape the old manage_resolutions admitted: a forecaster's own id
+      // on the header of a prop they do not own. Seeded as the owner, as if
+      // written before the fix, to prove such a row confers nothing now.
+      const member = await factory.createUser();
+      const competition = await createPrivateCompetition();
+      await addMember(competition.id, member.id, "forecaster");
+      const { prop, options } = await factory.createChoiceProp(
+        "one_of",
+        ["A", "B"],
+        { competition_id: competition.id, category_id: null },
+      );
+      const header = await db
+        .insertInto("resolutions")
+        .values({
+          prop_id: prop.id,
+          resolution: null,
+          notes: "original",
+          user_id: member.id,
+        })
+        .returning("id")
+        .executeTakeFirstOrThrow();
+      getTestTracker().trackId("resolutions", header.id);
+
+      const updated = await asUser(rls, member.id, (trx) =>
+        trx
+          .updateTable("resolutions")
+          .set({ notes: "tampered" })
+          .where("id", "=", header.id)
+          .executeTakeFirst(),
+      );
+      expect(updated.numUpdatedRows).toBe(BigInt(0));
+
+      const deleted = await asUser(rls, member.id, (trx) =>
+        trx
+          .deleteFrom("resolutions")
+          .where("id", "=", header.id)
+          .executeTakeFirst(),
+      );
+      expect(deleted.numDeletedRows).toBe(BigInt(0));
+
+      await expect(
+        asUser(rls, member.id, (trx) =>
+          trx
+            .insertInto("resolution_options")
+            .values({
+              resolution_id: header.id,
+              prop_id: prop.id,
+              option_id: options[0].id,
+              outcome: true,
+            })
+            .execute(),
+        ),
+      ).rejects.toThrow(/row-level security policy/);
+
+      const after = await db
+        .selectFrom("resolutions")
+        .select("notes")
+        .where("id", "=", header.id)
+        .executeTakeFirstOrThrow();
+      expect(after.notes).toBe("original");
     },
   );
 });

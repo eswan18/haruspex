@@ -1363,21 +1363,42 @@ describe("Props Unit Tests", () => {
     });
   });
 
+  /**
+   * A transaction for the undo actions: the prop lookup finds a public
+   * competition prop (so a site admin may undo it), and the delete removes
+   * one row.
+   */
+  function undoTrx() {
+    const reader: any = {
+      select: () => reader,
+      innerJoin: () => reader,
+      where: () => reader,
+      executeTakeFirst: async () => ({
+        prop_id: 1,
+        prop_user_id: null,
+        competition_id: 3,
+      }),
+    };
+    const deleter: any = {
+      where: () => deleter,
+      executeTakeFirst: async () => ({ numDeletedRows: BigInt(1) }),
+    };
+    return {
+      selectFrom: vi.fn(() => reader),
+      deleteFrom: vi.fn(() => deleter),
+    };
+  }
+
   describe("unresolveProp", () => {
     it("should delete resolution", async () => {
       vi.mocked(getUser.getUserFromCookies).mockResolvedValue(
         mockAdminUser as any,
       );
 
-      const mockTrx = {
-        deleteFrom: vi.fn().mockReturnThis(),
-        where: vi.fn().mockReturnThis(),
-        execute: vi.fn().mockResolvedValue(undefined),
-      };
-
-      vi.mocked(dbHelpers.withRLS).mockImplementation(async (userId, fn) => {
-        return fn(mockTrx as any);
-      });
+      const mockTrx = undoTrx();
+      vi.mocked(dbHelpers.withRLSAction).mockImplementation(
+        async (userId, fn) => fn(mockTrx as any),
+      );
 
       const result = await unresolveProp({ propId: 1 });
 
@@ -1431,15 +1452,10 @@ describe("Props Unit Tests", () => {
         mockAdminUser as any,
       );
 
-      const mockTrx = {
-        deleteFrom: vi.fn().mockReturnThis(),
-        where: vi.fn().mockReturnThis(),
-        execute: vi.fn().mockResolvedValue(undefined),
-      };
-
-      vi.mocked(dbHelpers.withRLS).mockImplementation(async (userId, fn) => {
-        return fn(mockTrx as any);
-      });
+      const mockTrx = undoTrx();
+      vi.mocked(dbHelpers.withRLSAction).mockImplementation(
+        async (userId, fn) => fn(mockTrx as any),
+      );
 
       const result = await deleteResolution({ id: 1 });
 

@@ -11,6 +11,7 @@ import { getForecasts, getPropById } from "@/lib/db_actions";
 import { getCurrentUserRole } from "@/lib/db_actions/competition-members";
 import { getUserFromCookies } from "@/lib/get-user";
 import { getPropStatusFromProp } from "@/lib/prop-status";
+import { canResolveProp } from "@/lib/prop-write-access";
 
 export default function PropPage({
   params,
@@ -67,7 +68,12 @@ async function PropPageContent({
       canEdit={
         user.is_admin || isCompetitionAdmin || prop.prop_user_id === user.id
       }
-      canResolve={user.is_admin || prop.prop_user_id === user.id}
+      canResolve={canResolveProp({
+        userId: user.id,
+        ownerId: prop.prop_user_id,
+        role: isCompetitionAdmin ? "admin" : null,
+        isSiteAdmin: user.is_admin,
+      })}
       back={
         prop.competition_id !== null && prop.competition_name
           ? {
