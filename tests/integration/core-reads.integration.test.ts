@@ -212,6 +212,57 @@ describe("core reads under row-level security", () => {
     );
   });
 
+  describe("getProp withUserForecast", () => {
+    ifRunningContainerTestsIt(
+      "carries the caller's binary forecast, null for none, and omits it by default",
+      async () => {
+        const user = await factory.createUser();
+        const other = await factory.createUser();
+        const prop = await factory.createProp();
+        await factory.createForecast(user.id, prop.id, { forecast: 0.7 });
+        await factory.createForecast(other.id, prop.id, { forecast: 0.2 });
+
+        const mine = await getProp(asCaller(user), prop.id, {
+          withUserForecast: true,
+        });
+        const theirs = await getProp(asCaller(other), prop.id, {
+          withUserForecast: true,
+        });
+        const plain = await getProp(asCaller(user), prop.id);
+        if (!mine.success || !theirs.success || !plain.success) {
+          throw new Error("read");
+        }
+        expect(mine.data?.user_forecast).toBe(0.7);
+        expect(theirs.data?.user_forecast).toBe(0.2);
+        expect(plain.data).not.toHaveProperty("user_forecast");
+
+        const nobody = await factory.createUser();
+        const none = await getProp(asCaller(nobody), prop.id, {
+          withUserForecast: true,
+        });
+        expect(none.success && none.data?.user_forecast).toBeNull();
+      },
+    );
+
+    ifRunningContainerTestsIt("is null for a choice prop", async () => {
+      const user = await factory.createUser();
+      const { prop, options } = await factory.createChoiceProp("one_of", [
+        "a",
+        "b",
+      ]);
+      await factory.createChoiceForecast(user.id, prop.id, [
+        { optionId: options[0].id, probability: 0.6 },
+        { optionId: options[1].id, probability: 0.4 },
+      ]);
+      const result = await getProp(asCaller(user), prop.id, {
+        withUserForecast: true,
+      });
+      if (!result.success || !result.data) throw new Error("read");
+      expect(result.data.user_forecast).toBeNull();
+      expect(result.data.options[0].user_forecast).toBe(0.6);
+    });
+  });
+
   describe("listCategories", () => {
     ifRunningContainerTestsIt("returns the seeded categories", async () => {
       const result = await listCategories(null);

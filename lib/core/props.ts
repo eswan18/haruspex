@@ -191,12 +191,17 @@ export async function listProps(
  * One prop with its option summaries, or null when the caller cannot see it.
  * `view` as for `listProps`: in `"member"`, another user's personal prop or a
  * private competition's prop the caller is not in reads as null.
+ * `withUserForecast` adds `user_forecast`, the caller's own yes/no forecast.
  */
 export async function getProp(
   caller: VUser | null,
   propId: number,
-  opts: { view?: CoreView } = {},
-): Promise<ServerActionResult<PropWithOptions | null>> {
+  opts: { view?: CoreView; withUserForecast?: boolean } = {},
+): Promise<
+  ServerActionResult<
+    (PropWithOptions & { user_forecast?: number | null }) | null
+  >
+> {
   const view = opts.view ?? "rls";
   logger.debug("Getting prop by ID", {
     propId,
@@ -221,7 +226,25 @@ export async function getProp(
         [prop],
         caller?.id ?? null,
       );
-      return { ...prop, options: optionsByProp.get(prop.prop_id) ?? [] };
+      const withOptions = {
+        ...prop,
+        options: optionsByProp.get(prop.prop_id) ?? [],
+      };
+      if (!opts.withUserForecast) return withOptions;
+      // The caller's own yes/no forecast, read in the same RLS transaction.
+      // Null for a choice prop (its header row has a null forecast) or none.
+      const mine = caller
+        ? await trx
+            .selectFrom("forecasts")
+            .select("forecast")
+            .where("prop_id", "=", propId)
+            .where("user_id", "=", caller.id)
+            .executeTakeFirst()
+        : undefined;
+      return {
+        ...withOptions,
+        user_forecast: mine?.forecast == null ? null : Number(mine.forecast),
+      };
     });
 
     logger.info("Retrieved prop by ID", {
