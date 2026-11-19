@@ -21,7 +21,7 @@ import {
 } from "@/lib/server-action-result";
 import { logger } from "@/lib/logger";
 import { withRLS, withRLSAction } from "@/lib/db-helpers";
-import { attachOptions } from "@/lib/attach-options";
+import { getProp, listProps } from "@/lib/core/props";
 import { newPropAudience } from "@/lib/competition-status";
 import { announcePropAdded } from "@/lib/notifications/prop-added";
 import { isChoiceKind, isPropKind, type PropKind } from "@/lib/prop-kind";
@@ -38,49 +38,7 @@ export async function getPropById(
   ServerActionResult<(VProp & { options: PropOptionSummary[] }) | null>
 > {
   const currentUser = await getUserFromCookies();
-
-  logger.debug("Getting prop by ID", {
-    propId,
-    currentUserId: currentUser?.id,
-  });
-
-  const startTime = Date.now();
-  try {
-    const result = await withRLS(currentUser?.id, async (trx) => {
-      const prop = await trx
-        .selectFrom("v_props")
-        .selectAll()
-        .where("prop_id", "=", propId)
-        .executeTakeFirst();
-      if (!prop) return null;
-      const optionsByProp = await attachOptions(
-        trx,
-        [prop],
-        currentUser?.id ?? null,
-      );
-      return { ...prop, options: optionsByProp.get(prop.prop_id) ?? [] };
-    });
-
-    const duration = Date.now() - startTime;
-    logger.info(`Retrieved prop by ID`, {
-      operation: "getPropById",
-      table: "v_props",
-      duration,
-      propId,
-      found: !!result,
-    });
-
-    return success(result);
-  } catch (err) {
-    const duration = Date.now() - startTime;
-    logger.error("Error getting prop by ID", err as Error, {
-      operation: "getPropById",
-      table: "v_props",
-      duration,
-      propId,
-    });
-    return error("Failed to fetch prop", ERROR_CODES.DATABASE_ERROR);
-  }
+  return getProp(currentUser, propId);
 }
 
 export async function getProps({
@@ -91,113 +49,7 @@ export async function getProps({
   userId?: (number | null)[] | number | null;
 }): Promise<ServerActionResult<VProp[]>> {
   const currentUser = await getUserFromCookies();
-
-  logger.debug("Getting props", {
-    propCompetitionId: JSON.stringify(competitionId),
-    propUserId: JSON.stringify(userId),
-    currentUserId: currentUser?.id,
-  });
-
-  const startTime = Date.now();
-  try {
-    // Clients can pass a single user ID (or null) or a single competition ID (or null) or
-    // an array of IDs.
-    // Standardize the input to an array of IDs.
-    let normalizedUserId: (number | null)[];
-    if (typeof userId === "number") {
-      normalizedUserId = [userId];
-    } else if (userId === null) {
-      normalizedUserId = [null];
-    } else if (Array.isArray(userId)) {
-      normalizedUserId = userId;
-    } else {
-      normalizedUserId = [];
-    }
-
-    let normalizedCompetitionId: (number | null)[];
-    if (typeof competitionId === "number") {
-      normalizedCompetitionId = [competitionId];
-    } else if (competitionId === null) {
-      normalizedCompetitionId = [null];
-    } else if (Array.isArray(competitionId)) {
-      normalizedCompetitionId = competitionId;
-    } else {
-      normalizedCompetitionId = [];
-    }
-
-    // Build and execute the query.
-    const results = await withRLS(currentUser?.id, async (trx) => {
-      let query = trx
-        .selectFrom("v_props")
-        .orderBy("prop_id", "asc")
-        .selectAll();
-
-      if (normalizedCompetitionId.length > 0) {
-        // Add filters for competitions, if requested.
-        const nonNullCompetitionIds = normalizedCompetitionId.filter(
-          (id: number | null) => id !== null,
-        );
-        query = query.where((eb) => {
-          const ors = [];
-          if (nonNullCompetitionIds.length > 0) {
-            ors.push(eb("competition_id", "in", nonNullCompetitionIds));
-          }
-          if (
-            normalizedCompetitionId.find((id: number | null) => id === null) !==
-            undefined
-          ) {
-            // If null is in the array, include rows where competition_id is null.
-            ors.push(eb("competition_id", "is", null));
-          }
-          return eb.or(ors);
-        });
-      }
-
-      if (normalizedUserId.length > 0) {
-        // Add filters for users, if requested.
-        const nonNullUserIds = normalizedUserId.filter(
-          (id: number | null) => id !== null,
-        );
-        query = query.where((eb) => {
-          const ors = [];
-          if (nonNullUserIds.length > 0) {
-            ors.push(eb("prop_user_id", "in", nonNullUserIds));
-          }
-          if (
-            normalizedUserId.find((id: number | null) => id === null) !==
-            undefined
-          ) {
-            // If null is in the array, we want to include public props (where prop_user_id is null).
-            ors.push(eb("prop_user_id", "is", null));
-          }
-          return eb.or(ors);
-        });
-      }
-
-      return await query.execute();
-    });
-
-    const duration = Date.now() - startTime;
-    logger.info(`Retrieved ${results.length} props`, {
-      operation: "getProps",
-      table: "v_props",
-      propCompetitionId: JSON.stringify(competitionId),
-      propUserId: JSON.stringify(userId),
-      duration,
-    });
-
-    return success(results);
-  } catch (err) {
-    const duration = Date.now() - startTime;
-    logger.error("Failed to get props", err as Error, {
-      operation: "getProps",
-      table: "v_props",
-      propCompetitionId: JSON.stringify(competitionId),
-      propUserId: JSON.stringify(userId),
-      duration,
-    });
-    return error("Failed to fetch props", ERROR_CODES.DATABASE_ERROR);
-  }
+  return listProps(currentUser, { competitionId, userId });
 }
 
 /**

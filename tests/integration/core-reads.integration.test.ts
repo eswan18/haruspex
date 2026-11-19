@@ -24,6 +24,7 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 import { featureEnabled } from "@/lib/core/feature-flags";
 import { listCategories } from "@/lib/core/categories";
 import { listCompetitions } from "@/lib/core/competitions";
+import { listProps, getProp } from "@/lib/core/props";
 
 describe("core reads under row-level security", () => {
   let db: Kysely<Database>;
@@ -152,6 +153,61 @@ describe("core reads under row-level security", () => {
         expect(asAdmin.data.find((c) => c.id === comp.id)).toMatchObject({
           can_add_props: true,
         });
+      },
+    );
+  });
+
+  describe("props", () => {
+    ifRunningContainerTestsIt(
+      "member view drops others' personal props and private seasons the caller is not in; rls view keeps them",
+      async () => {
+        const admin = await factory.createAdminUser();
+        const other = await factory.createUser();
+        const personal = await factory.createPersonalProp(other.id);
+        const comp = await privateCompetition();
+        const privateProp = await factory.createCompetitionProp(comp.id);
+
+        const member = await listProps(asCaller(admin), { view: "member" });
+        const rls = await listProps(asCaller(admin), {});
+        if (!member.success || !rls.success) throw new Error("read");
+        const memberIds = member.data.map((p) => p.prop_id);
+        const rlsIds = rls.data.map((p) => p.prop_id);
+        expect(memberIds).not.toContain(personal.id);
+        expect(memberIds).not.toContain(privateProp.id);
+        expect(rlsIds).toContain(personal.id);
+        expect(rlsIds).toContain(privateProp.id);
+      },
+    );
+
+    ifRunningContainerTestsIt(
+      "getProp hides another user's personal prop in the member view only",
+      async () => {
+        const admin = await factory.createAdminUser();
+        const other = await factory.createUser();
+        const personal = await factory.createPersonalProp(other.id);
+
+        const member = await getProp(asCaller(admin), personal.id, {
+          view: "member",
+        });
+        const rls = await getProp(asCaller(admin), personal.id);
+        expect(member).toEqual({ success: true, data: null });
+        expect(rls.success && rls.data?.prop_id).toBe(personal.id);
+      },
+    );
+
+    ifRunningContainerTestsIt(
+      "getProp returns an owner's personal choice prop with its options",
+      async () => {
+        const owner = await factory.createUser();
+        const { prop } = await factory.createChoiceProp("one_of", ["a", "b"], {
+          user_id: owner.id,
+          competition_id: null,
+        });
+        const result = await getProp(asCaller(owner), prop.id, {
+          view: "member",
+        });
+        if (!result.success || !result.data) throw new Error("read");
+        expect(result.data.options.map((o) => o.text)).toEqual(["a", "b"]);
       },
     );
   });
