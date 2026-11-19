@@ -27,3 +27,30 @@ export function canCreateProps({
 }): boolean {
   return isPrivate ? role === "admin" : isSiteAdmin;
 }
+
+/**
+ * Who may resolve a prop (and undo a resolution): its owner, if it is a
+ * personal prop; an admin of its competition; or a site admin, anywhere.
+ *
+ * The site-admin half differs from `canCreateProps` on purpose. It matches the
+ * `manage_resolutions` policy, which admits a site admin everywhere, and the
+ * prop page, which has always offered them the button. The prop pages and
+ * resolveProp both ask this, so the button and the action cannot disagree.
+ */
+export function canResolveProp({
+  userId,
+  ownerId,
+  role,
+  isSiteAdmin,
+}: {
+  userId: number;
+  /** The prop's `user_id`: set for a personal prop, null otherwise. */
+  ownerId: number | null;
+  /** Membership role in the prop's competition, if it has one. */
+  role: CompetitionRole | null;
+  isSiteAdmin: boolean;
+}): boolean {
+  return (
+    isSiteAdmin || role === "admin" || (ownerId !== null && ownerId === userId)
+  );
+}

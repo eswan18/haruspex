@@ -735,4 +735,100 @@ describe("user actions under row-level security", () => {
       );
     });
   });
+
+  /**
+   * Resolving is a power of the prop's owner (personal props), the
+   * competition's admins, and site admins -- the same people the prop page
+   * offers the Resolve button to. The action is callable directly, so the
+   * button's absence protects nothing; these run it as people who never see
+   * the button.
+   */
+  describe("who may resolve a prop", () => {
+    function resolutionsFor(propId: number) {
+      return db
+        .selectFrom("resolutions")
+        .selectAll()
+        .where("prop_id", "=", propId)
+        .execute();
+    }
+
+    ifRunningContainerTestsIt(
+      "refuses a reader resolving a public season's prop",
+      async () => {
+        const reader = await factory.createUser();
+        const comp = await openCompetition(false);
+        const prop = await factory.createCompetitionProp(comp.id);
+        actAs(reader);
+
+        const result = await resolveProp({ propId: prop.id, resolution: true });
+
+        expect(result.success).toBe(false);
+        if (!result.success) expect(result.code).toBe("UNAUTHORIZED");
+        expect(await resolutionsFor(prop.id)).toHaveLength(0);
+      },
+    );
+
+    ifRunningContainerTestsIt(
+      "refuses a forecaster resolving a private competition's prop",
+      async () => {
+        const member = await factory.createUser();
+        const comp = await openCompetition(true);
+        await addMember(comp.id, member.id, "forecaster");
+        const prop = await factory.createCompetitionProp(
+          comp.id,
+          privateDeadlines(),
+        );
+        actAs(member);
+
+        const result = await resolveProp({ propId: prop.id, resolution: true });
+
+        expect(result.success).toBe(false);
+        if (!result.success) expect(result.code).toBe("UNAUTHORIZED");
+        expect(await resolutionsFor(prop.id)).toHaveLength(0);
+      },
+    );
+
+    ifRunningContainerTestsIt(
+      "refuses a forecaster resolving a private competition's choice prop",
+      async () => {
+        const member = await factory.createUser();
+        const comp = await openCompetition(true);
+        await addMember(comp.id, member.id, "forecaster");
+        const { prop, options } = await factory.createChoiceProp(
+          "one_of",
+          ["Red", "Blue"],
+          { competition_id: comp.id, ...privateDeadlines() },
+        );
+        actAs(member);
+
+        const result = await resolveProp({
+          propId: prop.id,
+          outcomes: [
+            { optionId: options[0].id, outcome: true },
+            { optionId: options[1].id, outcome: false },
+          ],
+        });
+
+        expect(result.success).toBe(false);
+        if (!result.success) expect(result.code).toBe("UNAUTHORIZED");
+        expect(await resolutionsFor(prop.id)).toHaveLength(0);
+      },
+    );
+
+    ifRunningContainerTestsIt(
+      "lets a site admin resolve a public season's prop",
+      async () => {
+        const admin = await factory.createAdminUser();
+        const comp = await openCompetition(false);
+        const prop = await factory.createCompetitionProp(comp.id);
+        actAs(admin);
+
+        expectOk(await resolveProp({ propId: prop.id, resolution: true }));
+        const resolutions = await resolutionsFor(prop.id);
+        expect(resolutions).toHaveLength(1);
+        // Written as app_user, so the global cleanup needs to know about it.
+        getTestTracker().trackId("resolutions", resolutions[0].id);
+      },
+    );
+  });
 });

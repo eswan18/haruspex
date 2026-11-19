@@ -22,6 +22,7 @@ import { attachOptions } from "@/lib/attach-options";
 import { newPropAudience } from "@/lib/competition-status";
 import { announcePropAdded } from "@/lib/notifications/prop-added";
 import { isChoiceKind, isPropKind, type PropKind } from "@/lib/prop-kind";
+import { canResolveProp } from "@/lib/prop-write-access";
 import {
   validateChoiceOutcomes,
   validateOptionLabels,
@@ -234,14 +235,50 @@ export async function resolveProp({
   // `resolution` field is undefined for choice props.
   let resolvedKind: PropKind | undefined;
   try {
-    const result = await withRLSAction(currentUser?.id, async (trx) => {
+    if (!currentUser) {
+      return error(
+        "You must be logged in to resolve propositions",
+        ERROR_CODES.UNAUTHORIZED,
+      );
+    }
+
+    const result = await withRLSAction(currentUser.id, async (trx) => {
       const prop = await trx
         .selectFrom("v_props")
-        .select("prop_kind")
+        .select(["prop_kind", "prop_user_id", "competition_id"])
         .where("prop_id", "=", propId)
         .executeTakeFirst();
       if (!prop) {
         return error("Proposition not found", ERROR_CODES.NOT_FOUND);
+      }
+
+      // The manage_resolutions policy refuses the write too; asking first
+      // gives the caller a reason instead of a database error.
+      const membership =
+        prop.competition_id === null
+          ? undefined
+          : await trx
+              .selectFrom("competition_members")
+              .select("role")
+              .where("competition_id", "=", prop.competition_id)
+              .where("user_id", "=", currentUser.id)
+              .executeTakeFirst();
+      if (
+        !canResolveProp({
+          userId: currentUser.id,
+          ownerId: prop.prop_user_id,
+          role: membership?.role ?? null,
+          isSiteAdmin: currentUser.is_admin,
+        })
+      ) {
+        logger.warn("Unauthorized attempt to resolve prop", {
+          propId,
+          currentUserId: currentUser.id,
+        });
+        return error(
+          "Only the prop's owner or a competition admin can resolve it",
+          ERROR_CODES.UNAUTHORIZED,
+        );
       }
 
       const kind = prop.prop_kind;
@@ -322,7 +359,7 @@ export async function resolveProp({
           // Who resolved it comes from the session, never the request. This
           // is a server action, so a caller-supplied author could name anyone,
           // and the only caller never sent one.
-          user_id: currentUser?.id ?? null,
+          user_id: currentUser.id,
           notes,
         };
         const inserted = await trx

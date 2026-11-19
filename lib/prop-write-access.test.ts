@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { canCreateProps } from "./prop-write-access";
+import { canCreateProps, canResolveProp } from "./prop-write-access";
 
 describe("canCreateProps", () => {
   describe("a private competition", () => {
@@ -56,5 +56,77 @@ describe("canCreateProps", () => {
         canCreateProps({ isPrivate: false, role: "admin", isSiteAdmin: false }),
       ).toBe(false);
     });
+  });
+});
+
+describe("canResolveProp", () => {
+  const me = 7;
+
+  it("lets the owner of a personal prop resolve it", () => {
+    expect(
+      canResolveProp({
+        userId: me,
+        ownerId: me,
+        role: null,
+        isSiteAdmin: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps out anyone else from a personal prop", () => {
+    expect(
+      canResolveProp({
+        userId: me,
+        ownerId: 8,
+        role: null,
+        isSiteAdmin: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("lets a competition admin resolve the competition's props", () => {
+    expect(
+      canResolveProp({
+        userId: me,
+        ownerId: null,
+        role: "admin",
+        isSiteAdmin: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps a forecaster out", () => {
+    expect(
+      canResolveProp({
+        userId: me,
+        ownerId: null,
+        role: "forecaster",
+        isSiteAdmin: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("keeps out a reader of a public season, who has no role", () => {
+    expect(
+      canResolveProp({
+        userId: me,
+        ownerId: null,
+        role: null,
+        isSiteAdmin: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("lets a site admin resolve anything", () => {
+    // Unlike adding props: the database lets a site admin resolve any prop,
+    // and the prop page offers them the button everywhere.
+    expect(
+      canResolveProp({
+        userId: me,
+        ownerId: null,
+        role: null,
+        isSiteAdmin: true,
+      }),
+    ).toBe(true);
   });
 });

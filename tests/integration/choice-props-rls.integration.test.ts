@@ -456,6 +456,21 @@ describe("choice props row-level security", () => {
             .execute(),
         ),
       ).rejects.toThrow(/row-level security policy/);
+      // ...nor by stamping it with their own id, which is what resolveProp
+      // writes: "it's mine because I wrote it" must not be a way in.
+      await expect(
+        asUser(rls, member.id, (trx) =>
+          trx
+            .insertInto("resolutions")
+            .values({
+              prop_id: prop.id,
+              resolution: null,
+              notes: null,
+              user_id: member.id,
+            })
+            .execute(),
+        ),
+      ).rejects.toThrow(/row-level security policy/);
       const afterFailedAttempt = await db
         .selectFrom("resolutions")
         .selectAll()
