@@ -26,6 +26,11 @@ const PUBLIC_ROUTES = [
   // Safari's keepalive requests) was redirected to /login, and the SDK read
   // the login page's 200 as success: bug reports said "sent" and vanished.
   "/monitoring",
+  // MCP authenticates with a bearer token, never a cookie. Its sign-in starts
+  // only from /mcp's own 401, so a redirect to /login would strand the
+  // client; the protected resource metadata (RFC 9728) is public by design.
+  "/mcp",
+  "/.well-known/oauth-protected-resource",
 ];
 
 const REFRESH_BUFFER_SEC = 60;
