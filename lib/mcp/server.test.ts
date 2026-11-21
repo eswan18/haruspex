@@ -1,9 +1,4 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  InMemoryTransport,
-  type AuthInfo,
-  type JSONRPCMessage,
-} from "@modelcontextprotocol/server";
 import type { VUser } from "@/types/db_types";
 
 vi.mock("@/lib/mcp/tools", () => ({
@@ -17,6 +12,7 @@ vi.mock("@/lib/mcp/tools", () => ({
 
 import * as tools from "./tools";
 import { buildMcpServer } from "./server";
+import { callTool } from "../../tests/helpers/mcpCall";
 
 const caller = { id: 7 } as VUser;
 
@@ -26,65 +22,12 @@ afterEach(() => {
   }
 });
 
-/**
- * Calls a tool over a transport with no scope-challenge support, so only the
- * tool's own scope check stands between a read-only token and the write.
- */
-async function callWithScopes(
+function callWithScopes(
   name: string,
   args: Record<string, unknown>,
   scopes: string[],
 ) {
-  const server = buildMcpServer(caller);
-  const [client, serverSide] = InMemoryTransport.createLinkedPair();
-  const received: JSONRPCMessage[] = [];
-  client.onmessage = (message) => received.push(message);
-  await server.connect(serverSide);
-  await client.start();
-
-  const authInfo: AuthInfo = {
-    token: "t",
-    clientId: "claude",
-    scopes,
-    extra: { caller },
-  };
-  const reply = (id: number) =>
-    vi.waitFor(() => {
-      const found = received.find((m) => "id" in m && m.id === id);
-      if (!found) throw new Error(`no reply to ${id}`);
-      return found as { result?: Record<string, unknown> };
-    });
-
-  await client.send(
-    {
-      jsonrpc: "2.0",
-      id: 1,
-      method: "initialize",
-      params: {
-        protocolVersion: "2025-11-25",
-        capabilities: {},
-        clientInfo: { name: "test", version: "1.0.0" },
-      },
-    },
-    { authInfo },
-  );
-  await reply(1);
-  await client.send(
-    { jsonrpc: "2.0", method: "notifications/initialized" },
-    { authInfo },
-  );
-  await client.send(
-    {
-      jsonrpc: "2.0",
-      id: 2,
-      method: "tools/call",
-      params: { name, arguments: args },
-    },
-    { authInfo },
-  );
-  const { result } = await reply(2);
-  await server.close();
-  return result;
+  return callTool(buildMcpServer(caller), caller, name, args, scopes);
 }
 
 describe("buildMcpServer write-scope backstop", () => {

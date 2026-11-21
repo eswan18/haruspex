@@ -17,6 +17,9 @@ import {
   listCompetitionsTool,
   listPropsTool,
   resolvePropTool,
+  type CompetitionResult,
+  type PropDetail,
+  type PropResult,
   type ToolOutcome,
 } from "./tools";
 
@@ -77,13 +80,34 @@ const competitionResult = z.object({
   id: z.number().int(),
   name: z.string(),
   is_private: z.boolean(),
-  status: z.enum(["upcoming", "forecasts-open", "forecasts-closed", "ended"]),
+  status: z.enum([
+    "upcoming",
+    "forecasts-open",
+    "forecasts-closed",
+    "ended",
+    // A private competition has no dates of its own; its deadlines are per prop.
+    "private",
+  ]),
   forecasts_open_date: z.string().nullable(),
   forecasts_close_date: z.string().nullable(),
   end_date: z.string().nullable(),
   your_role: z.enum(["admin", "forecaster"]).nullable(),
   can_add_props: z.boolean(),
 });
+
+/**
+ * The output schemas restate lib/mcp/tools' result types, and the SDK rejects
+ * any result that does not match its schema -- so a drift between the two
+ * (a competition status the schema does not list) makes the tool fail for
+ * every caller. These fail the type check instead.
+ */
+type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+const schemasMatchResultTypes: {
+  competition: Same<z.infer<typeof competitionResult>, CompetitionResult>;
+  prop: Same<z.infer<typeof propResult>, PropResult>;
+  detail: Same<z.infer<typeof propDetail>, PropDetail>;
+} = { competition: true, prop: true, detail: true };
+void schemasMatchResultTypes;
 
 // --- result mapping -------------------------------------------------------
 
@@ -93,9 +117,16 @@ function toResult<T extends Record<string, unknown>>(
   if (!outcome.ok) {
     return { isError: true, content: [{ type: "text", text: outcome.error }] };
   }
+  // The data goes in the text content too, as JSON: the spec asks servers
+  // that return structuredContent to, and some clients (Claude among them)
+  // hand the model only the text, so without it the model sees just the
+  // summary line.
   return {
     structuredContent: outcome.data,
-    content: [{ type: "text", text: outcome.summary }],
+    content: [
+      { type: "text", text: outcome.summary },
+      { type: "text", text: JSON.stringify(outcome.data) },
+    ],
   };
 }
 

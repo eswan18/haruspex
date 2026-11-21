@@ -216,7 +216,14 @@ describe.each(["modern", "legacy"] as const)(
       expect(result.structuredContent).toEqual({
         categories: [{ id: 1, name: "Politics" }],
       });
-      expect(result.content).toEqual([{ type: "text", text: "1 category" }]);
+      // The data rides in the text too: some clients show the model only text.
+      expect(result.content).toEqual([
+        { type: "text", text: "1 category" },
+        {
+          type: "text",
+          text: JSON.stringify({ categories: [{ id: 1, name: "Politics" }] }),
+        },
+      ]);
       expect(tools.listCategoriesTool).toHaveBeenCalledWith(caller, {});
       await client.close();
     });
