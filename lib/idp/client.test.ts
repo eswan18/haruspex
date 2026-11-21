@@ -299,5 +299,67 @@ describe("IDP Client", () => {
         sub: "user-123",
       });
     });
+
+    describe("MCP access tokens", () => {
+      // An MCP access token (aud = MCP_RESOURCE_URL) must never stand in for
+      // a web session cookie, even where IDP_AUDIENCE is not set: it may be
+      // read-only, and may be held by a third-party client.
+      const MCP_URL = "https://haruspex.fyi/mcp";
+
+      beforeEach(() => {
+        vi.stubEnv("IDP_AUDIENCE", "");
+      });
+
+      it("rejects a token whose aud is the MCP resource", async () => {
+        vi.stubEnv("MCP_RESOURCE_URL", MCP_URL);
+        const { validateIDPToken } = await verifyingWith(MCP_URL);
+        await expect(validateIDPToken(TOKEN)).rejects.toThrow(/MCP/);
+      });
+
+      it("rejects a token whose aud array contains the MCP resource", async () => {
+        vi.stubEnv("MCP_RESOURCE_URL", ` ${MCP_URL} `);
+        const { validateIDPToken } = await verifyingWith([
+          "haruspex-web",
+          MCP_URL,
+        ]);
+        await expect(validateIDPToken(TOKEN)).rejects.toThrow(/MCP/);
+      });
+
+      it("logs the rejection without the token", async () => {
+        vi.stubEnv("MCP_RESOURCE_URL", MCP_URL);
+        const { validateIDPToken } = await verifyingWith(MCP_URL);
+        const { logger } = await import("@/lib/logger");
+        vi.mocked(logger.warn).mockClear();
+        await validateIDPToken(TOKEN).catch(() => {});
+        expect(logger.warn).toHaveBeenCalled();
+        expect(JSON.stringify(vi.mocked(logger.warn).mock.calls)).not.toContain(
+          TOKEN,
+        );
+      });
+
+      it("accepts a token with some other aud", async () => {
+        vi.stubEnv("MCP_RESOURCE_URL", MCP_URL);
+        const { validateIDPToken } = await verifyingWith("haruspex-web");
+        await expect(validateIDPToken(TOKEN)).resolves.toMatchObject({
+          sub: "user-123",
+        });
+      });
+
+      it("does not match the MCP resource as a substring", async () => {
+        vi.stubEnv("MCP_RESOURCE_URL", MCP_URL);
+        const { validateIDPToken } = await verifyingWith(`${MCP_URL}/extra`);
+        await expect(validateIDPToken(TOKEN)).resolves.toMatchObject({
+          sub: "user-123",
+        });
+      });
+
+      it("accepts an MCP-aud token unchanged when MCP_RESOURCE_URL is unset", async () => {
+        vi.stubEnv("MCP_RESOURCE_URL", "");
+        const { validateIDPToken } = await verifyingWith(MCP_URL);
+        await expect(validateIDPToken(TOKEN)).resolves.toMatchObject({
+          sub: "user-123",
+        });
+      });
+    });
   });
 });
