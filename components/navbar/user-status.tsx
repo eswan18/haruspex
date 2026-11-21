@@ -8,7 +8,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
-import { LogOut, Settings, User2, UserRoundPen } from "lucide-react";
+import {
+  CircleHelp,
+  LogOut,
+  Settings,
+  User2,
+  UserRoundPen,
+} from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 import { Button } from "../ui/button";
@@ -65,6 +71,12 @@ export function UserStatus() {
               <DropdownMenuItem>
                 <Settings className="mr-2 h-4 w-4" />
                 <span>Account Settings</span>
+              </DropdownMenuItem>
+            </Link>
+            <Link href="/help">
+              <DropdownMenuItem>
+                <CircleHelp className="mr-2 h-4 w-4" />
+                <span>Help</span>
               </DropdownMenuItem>
             </Link>
             <DropdownMenuItem onClick={logout}>

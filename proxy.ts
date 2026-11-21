@@ -67,7 +67,9 @@ function isPublicRoute(pathname: string): boolean {
  * once there is genuinely no session to restore.
  */
 function servesAnonymous(pathname: string): boolean {
-  return pathname === "/";
+  // /help: people are sent its link (the MCP setup) before they have an
+  // account, and it tells them to sign in first.
+  return pathname === "/" || pathname === "/help";
 }
 
 /**

@@ -12,7 +12,9 @@ export default async function Page() {
   // provider. No wrapper heading, because the sheet prints its own.
   return (
     <AccountDetails
-      idpBaseUrl={process.env.IDP_BASE_URL}
+      // The public URL: this is a link for the reader's browser. IDP_BASE_URL
+      // is identity's in-cluster address, which no browser can reach.
+      idpPublicUrl={process.env.IDP_PUBLIC_URL}
       notifications={preferences.success ? preferences.data : null}
     />
   );
