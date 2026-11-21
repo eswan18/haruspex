@@ -67,6 +67,7 @@ This codebase follows a structured server action pattern that returns results in
 
 - Auth is delegated to the **identity** IdP (OAuth 2.0 / OIDC); this app does not store or hash passwords
 - JWTs are verified with `jose`; `JWT_SECRET` signs the app's own impersonation tokens (`/lib/auth/impersonation.ts`)
+- **Session tokens must carry this app's audience.** identity signs every app's tokens with one key, so `validateIDPToken` requires `aud` to contain `IDP_AUDIENCE` (`ethanswan:haruspex`, the haruspex client's default resource in identity); otherwise any other app's token would work as a haruspex session cookie. Change that client's default resource and you must change this env var with it, or everyone is signed out.
 - User sessions managed via `/lib/auth/` modules (impersonation, logout, token refresh)
 - RLS (Row Level Security) enabled on key tables
 
