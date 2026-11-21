@@ -106,6 +106,13 @@ const ownCss = `
   color: var(--ink-muted);
 }
 .hxp .note.mono { font-size: 0.6875rem; }
+.hxp .lede .help-link {
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--red);
+  text-underline-offset: 0.2em;
+}
+.hxp .lede .help-link:hover { color: var(--red-text); }
 `;
 
 /**
@@ -117,10 +124,10 @@ const ownCss = `
  * that IS ours to set is which mail we send, so that sits between them.
  */
 export function AccountDetails({
-  idpBaseUrl,
+  idpPublicUrl,
   notifications,
 }: {
-  idpBaseUrl?: string;
+  idpPublicUrl?: string;
   /** Null when nobody is signed in, or the read failed. */
   notifications: EffectivePreferences | null;
 }) {
@@ -142,7 +149,7 @@ export function AccountDetails({
             username={user.username}
             name={user.name}
             pictureUrl={user.picture_url}
-            idpBaseUrl={idpBaseUrl}
+            idpPublicUrl={idpPublicUrl}
             notifications={notifications}
           />
         ) : (
@@ -156,9 +163,9 @@ export function AccountDetails({
 }
 
 /** The provider's account page, or nothing if this deployment has no provider. */
-function accountSettingsUrl(idpBaseUrl?: string) {
-  if (!idpBaseUrl) return undefined;
-  return `${idpBaseUrl.replace(/\/+$/, "")}/oauth/account-settings`;
+function accountSettingsUrl(idpPublicUrl?: string) {
+  if (!idpPublicUrl) return undefined;
+  return `${idpPublicUrl.replace(/\/+$/, "")}/oauth/account-settings`;
 }
 
 function AccountRecord({
@@ -166,18 +173,18 @@ function AccountRecord({
   username,
   name,
   pictureUrl,
-  idpBaseUrl,
+  idpPublicUrl,
   notifications,
 }: {
   email: string;
   username: string | null;
   name: string | null;
   pictureUrl: string | null;
-  idpBaseUrl?: string;
+  idpPublicUrl?: string;
   notifications: EffectivePreferences | null;
 }) {
   const [avatarOpen, setAvatarOpen] = useState(false);
-  const settingsUrl = accountSettingsUrl(idpBaseUrl);
+  const settingsUrl = accountSettingsUrl(idpPublicUrl);
 
   return (
     <>
@@ -235,6 +242,18 @@ function AccountRecord({
       </div>
 
       {notifications && <NotificationSettings initial={notifications} />}
+
+      <h2 className="kicker">
+        <span>AI assistants</span>
+      </h2>
+      <p className="lede">
+        Connect Claude or another assistant to your account, so it can read and
+        add props for you.{" "}
+        <a className="help-link" href="/help#mcp">
+          How to connect one
+        </a>
+        .
+      </p>
 
       <h2 className="kicker">
         <span>Identity provider</span>

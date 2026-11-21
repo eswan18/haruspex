@@ -131,6 +131,34 @@ describe("proxy: MCP routes authenticate themselves", () => {
   });
 });
 
+describe("proxy: the help page serves visitors", () => {
+  // People are sent the link (the MCP setup, an announcement) before they
+  // have signed in, and the page tells them to sign in first; a redirect to
+  // /login would hide the instructions from exactly the reader who needs them.
+  it("passes /help through with no cookies", async () => {
+    const { proxy } = await import("./proxy");
+    const res = await proxy(makeRequest("/help"));
+    expect(res.headers.get("location")).toBeNull();
+    expect(res.headers.get("x-middleware-next")).toBe("1");
+  });
+
+  // ...but it is not a public route: a signed-in reader whose token has just
+  // expired is refreshed, so the navbar still shows them signed in.
+  it("still refreshes a signed-in reader's session on /help", async () => {
+    mockRefreshAccessToken.mockResolvedValue({
+      access_token: "new-access",
+      token_type: "Bearer",
+      expires_in: 3600,
+    });
+    const { proxy } = await import("./proxy");
+    const res = await proxy(
+      makeRequest("/help", `token=${EXPIRED_JWT}; refresh_token=refresh-xyz`),
+    );
+    expect(mockRefreshAccessToken).toHaveBeenCalledWith("refresh-xyz");
+    expect(res.cookies.get("token")?.value).toBe("new-access");
+  });
+});
+
 describe("proxy: protected routes with no token", () => {
 
   it("redirects to /login when no token cookie exists", async () => {
