@@ -665,6 +665,11 @@ describe("Props Unit Tests", () => {
     });
 
     it("announces nothing for a competition with no audience, even when asked", async () => {
+      // Only a site admin may add to a public season.
+      vi.mocked(getUser.getUserFromCookies).mockResolvedValue({
+        ...mockUser,
+        is_admin: true,
+      } as any);
       useTrx(trxFor(publicCompetition));
 
       const result = await createProp({

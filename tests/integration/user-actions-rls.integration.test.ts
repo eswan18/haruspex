@@ -125,6 +125,16 @@ describe("user actions under row-level security", () => {
     getTestTracker().trackId("competition_members", row.id);
   }
 
+  /** Grants a user a feature flag, as an admin would from the flags page. */
+  async function grantFlag(name: string, userId: number) {
+    const row = await db
+      .insertInto("feature_flags")
+      .values({ name, enabled: true, user_id: userId })
+      .returning("id")
+      .executeTakeFirstOrThrow();
+    getTestTracker().trackId("feature_flags", row.id);
+  }
+
   async function propIdByText(text: string): Promise<number> {
     const row = await db
       .selectFrom("props")
@@ -334,6 +344,7 @@ describe("user actions under row-level security", () => {
       "creates, forecasts, edits, resolves, unresolves and deletes a yes/no prop",
       async () => {
         const owner = await factory.createUser();
+        await grantFlag("personal-props", owner.id);
         actAs(owner);
         const text = `Personal binary ${Math.random()}`;
 
@@ -384,6 +395,7 @@ describe("user actions under row-level security", () => {
       "creates a choice prop, renames its options and resolves it",
       async () => {
         const owner = await factory.createUser();
+        await grantFlag("personal-props", owner.id);
         actAs(owner);
         const text = `Personal choice ${Math.random()}`;
 
@@ -743,6 +755,120 @@ describe("user actions under row-level security", () => {
    * button's absence protects nothing; these run it as people who never see
    * the button.
    */
+  describe("who may create a prop", () => {
+    function personalProp(userId: number, text: string) {
+      return {
+        text,
+        notes: null,
+        category_id: null,
+        competition_id: null,
+        user_id: userId,
+      };
+    }
+
+    async function propsWithText(text: string) {
+      return db
+        .selectFrom("props")
+        .select("id")
+        .where("text", "=", text)
+        .execute();
+    }
+
+    ifRunningContainerTestsIt(
+      "refuses a personal prop to a user without the personal-props flag",
+      async () => {
+        const user = await factory.createUser();
+        actAs(user);
+        const text = `Unflagged personal ${Math.random()}`;
+
+        const result = await createProp({ prop: personalProp(user.id, text) });
+
+        expect(result.success).toBe(false);
+        if (!result.success) expect(result.code).toBe("UNAUTHORIZED");
+        expect(await propsWithText(text)).toHaveLength(0);
+      },
+    );
+
+    ifRunningContainerTestsIt(
+      "allows a personal prop once the flag is set for the user",
+      async () => {
+        const user = await factory.createUser();
+        await grantFlag("personal-props", user.id);
+        actAs(user);
+        const text = `Flagged personal ${Math.random()}`;
+
+        expectOk(await createProp({ prop: personalProp(user.id, text) }));
+        await propIdByText(text);
+      },
+    );
+
+    ifRunningContainerTestsIt(
+      "refuses a personal prop written in someone else's name",
+      async () => {
+        const user = await factory.createUser();
+        const other = await factory.createUser();
+        await grantFlag("personal-props", user.id);
+        actAs(user);
+        const text = `Impersonated personal ${Math.random()}`;
+
+        const result = await createProp({ prop: personalProp(other.id, text) });
+
+        expect(result.success).toBe(false);
+        if (!result.success) expect(result.code).toBe("UNAUTHORIZED");
+        expect(await propsWithText(text)).toHaveLength(0);
+      },
+    );
+
+    ifRunningContainerTestsIt(
+      "refuses a plain reader adding a prop to a public season",
+      async () => {
+        const reader = await factory.createUser();
+        const comp = await openCompetition(false);
+        const category = await factory.createCategory();
+        actAs(reader);
+        const text = `Reader's season prop ${Math.random()}`;
+
+        const result = await createProp({
+          prop: {
+            text,
+            notes: null,
+            category_id: category.id,
+            competition_id: comp.id,
+          },
+        });
+
+        expect(result.success).toBe(false);
+        if (!result.success) expect(result.code).toBe("UNAUTHORIZED");
+        expect(await propsWithText(text)).toHaveLength(0);
+      },
+    );
+
+    ifRunningContainerTestsIt(
+      "refuses a forecaster adding a prop to their private competition",
+      async () => {
+        const member = await factory.createUser();
+        const comp = await openCompetition(true);
+        await addMember(comp.id, member.id, "forecaster");
+        actAs(member);
+        const text = `Forecaster's private prop ${Math.random()}`;
+
+        const result = await createProp({
+          prop: {
+            text,
+            notes: null,
+            category_id: null,
+            competition_id: comp.id,
+            ...privateDeadlines(),
+          },
+        });
+
+        expect(result.success).toBe(false);
+        if (!result.success) expect(result.code).toBe("UNAUTHORIZED");
+        expect(await propsWithText(text)).toHaveLength(0);
+      },
+    );
+  });
+
   describe("who may resolve a prop", () => {
     function resolutionsFor(propId: number) {
       return db

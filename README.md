@@ -13,6 +13,44 @@ A NextJS app and database migrations, basically.
 
 In Vercel, with minimal customization.
 
+## MCP server
+
+`/mcp` lets an agent read and write props as the signed-in reader (see the MCP
+section of `CLAUDE.md`, and `docs/superpowers/specs/2026-11-19-mcp-server-design.md`).
+It needs `MCP_RESOURCE_URL` (set in each overlay's `configmap-env.yaml`) and
+`IDP_PUBLIC_URL`; without either it answers 503.
+
+### Rollout
+
+Not live until identity knows the resource. Run **both** commands below (the
+prod URI and the staging URI) against **each** identity database, prod's and
+staging's -- four runs in all. Staging's identity database is periodically
+overwritten by a copy of prod's, so a registration made only in staging's is
+wiped by the next copy:
+
+```bash
+identity-cli resource create --uri https://haruspex.fyi/mcp --name "Haruspex" \
+  --scope "haruspex:read=Read competitions and props" \
+  --scope "haruspex:write=Add and resolve props" --dynamic-clients
+
+identity-cli resource create --uri https://staging.haruspex.fyi/mcp --name "Haruspex (staging)" \
+  --scope "haruspex:read=Read competitions and props" \
+  --scope "haruspex:write=Add and resolve props" --dynamic-clients
+```
+
+Then sign in once to the site in the same environment (staging.haruspex.fyi
+for staging, haruspex.fyi for prod) with the account you will connect as,
+before connecting; an unknown user gets 403. Then:
+
+- **Staging** is reachable only from the tailnet (as is staging identity), so
+  claude.ai cannot test it. From a tailnet machine:
+  `claude mcp add --transport http haruspex-staging https://staging.haruspex.fyi/mcp`
+- **Prod**: after `bif promote haruspex`, add `https://haruspex.fyi/mcp` as a
+  custom connector in claude.ai.
+
+Revoking an MCP grant takes effect when its access token expires, not at
+once: `/mcp` verifies tokens locally and does not introspect them.
+
 ## DB Schema
 
 ![Schema Diagram](docs/schema.png)

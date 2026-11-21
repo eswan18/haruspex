@@ -188,7 +188,7 @@ let jwksCacheExpiry: number = 0;
  * Get the JWKS for validating IDP tokens.
  * Caches the JWKS for 1 hour.
  */
-async function getJWKS(): Promise<jose.JWTVerifyGetKey> {
+export async function getJWKS(): Promise<jose.JWTVerifyGetKey> {
   // Return cached JWKS if still valid
   if (jwksCache && Date.now() < jwksCacheExpiry) {
     return jwksCache;
@@ -232,6 +232,22 @@ export async function validateIDPToken(token: string): Promise<IDPClaims> {
       aud: payload.aud,
     });
     throw new Error("Token audience is not this app");
+  }
+
+  // An MCP access token is minted for the /mcp resource (aud =
+  // MCP_RESOURCE_URL), may carry only haruspex:read, and may be held by a
+  // third-party MCP client. Without this check it could be replayed as the
+  // `token` session cookie and drive every server action with full write
+  // power. IDP_AUDIENCE already refuses it where set; this holds even where
+  // it is not.
+  const mcpResource = process.env.MCP_RESOURCE_URL?.trim();
+  if (mcpResource) {
+    if (audiences.includes(mcpResource)) {
+      logger.warn("Refused an MCP access token as a web session token", {
+        sub: payload.sub,
+      });
+      throw new Error("MCP access tokens are not valid web session tokens");
+    }
   }
 
   return {
