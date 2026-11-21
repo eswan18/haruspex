@@ -126,6 +126,9 @@ registers the tools) and the routes are `app/mcp/route.ts` and
   personal props only the caller's own, private competitions only where they
   are a member. Admin pages keep the "rls" view. An agent acting for an admin
   should not surface what the admin merely *could* see.
+- **Admin-only tools** (`list_suggested_props`) are registered only when the
+  caller is a site admin, so other agents never see them; the core function
+  refuses non-admins as well. They use `haruspex:read`, not a separate scope.
 - **Never put `use server` in `lib/core`.** It would turn every export into a
   public endpoint callable from the browser. Server actions wrap core
   functions; they are not the core.
