@@ -198,4 +198,92 @@ describe("the MCP server's tools, end to end", () => {
       getTestTracker().trackId("resolutions", row.id);
     },
   );
+
+  describe("list_suggested_props", () => {
+    async function suggestion(
+      suggesterId: number,
+      decided?: { status: "accepted" | "rejected"; by: number },
+    ) {
+      const row = await db
+        .insertInto("suggested_props")
+        .values({
+          suggester_user_id: suggesterId,
+          prop: `Will suggestion ${Math.random()} come true?`,
+          notes: "Settle it by the official count.",
+          status: decided?.status ?? null,
+          decided_by: decided?.by ?? null,
+          decided_at: decided ? new Date() : null,
+        })
+        .returning("id")
+        .executeTakeFirstOrThrow();
+      getTestTracker().trackId("suggested_props", row.id);
+      return row.id;
+    }
+
+    ifRunningContainerTestsIt(
+      "shows a site admin the undecided queue by default",
+      async () => {
+        const admin = (await factory.createAdminUser()) as unknown as VUser;
+        const suggester = await factory.createUser();
+        const pending = await suggestion(suggester.id);
+        const accepted = await suggestion(suggester.id, {
+          status: "accepted",
+          by: admin.id,
+        });
+
+        const data = expectData(await call(admin, "list_suggested_props"));
+        const rows = data.suggestions as {
+          id: number;
+          status: string;
+          suggested_by: { id: number };
+        }[];
+        const ids = rows.map((r) => r.id);
+        expect(ids).toContain(pending);
+        expect(ids).not.toContain(accepted);
+        const mine = rows.find((r) => r.id === pending)!;
+        expect(mine.status).toBe("undecided");
+        expect(mine.suggested_by.id).toBe(suggester.id);
+      },
+    );
+
+    ifRunningContainerTestsIt(
+      "shows decided ones, with who decided, when asked",
+      async () => {
+        const admin = (await factory.createAdminUser()) as unknown as VUser;
+        const suggester = await factory.createUser();
+        const rejected = await suggestion(suggester.id, {
+          status: "rejected",
+          by: admin.id,
+        });
+
+        const data = expectData(
+          await call(admin, "list_suggested_props", {
+            status: "all",
+            limit: 200,
+          }),
+        );
+        const row = (
+          data.suggestions as {
+            id: number;
+            status: string;
+            decided_by: string | null;
+          }[]
+        ).find((r) => r.id === rejected)!;
+        expect(row.status).toBe("rejected");
+        expect(row.decided_by).toBe(admin.name);
+      },
+    );
+
+    ifRunningContainerTestsIt(
+      "is not offered to anyone but a site admin",
+      async () => {
+        const { user } = await seededReader();
+        const result = await call(user, "list_suggested_props");
+        // No result at all: the server answers "unknown tool" with a protocol
+        // error. Were the tool registered, the core's refusal would come back
+        // as an isError result instead.
+        expect(result).toBeUndefined();
+      },
+    );
+  });
 });

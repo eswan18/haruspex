@@ -8,6 +8,7 @@ import {
   type CompetitionWithRole,
 } from "@/lib/core/competitions";
 import { listCategories } from "@/lib/core/categories";
+import { listSuggestedProps } from "@/lib/core/suggested-props";
 import {
   createProp,
   getProp,
@@ -58,6 +59,19 @@ export type PropResult = {
 export type PropDetail = PropResult & {
   notes: string | null;
   your_forecast: number | null;
+};
+
+export type SuggestionStatus = "undecided" | "accepted" | "rejected";
+
+export type SuggestionResult = {
+  id: number;
+  text: string;
+  notes: string | null;
+  suggested_by: { id: number; name: string; email: string };
+  suggested_at: string;
+  status: SuggestionStatus;
+  decided_at: string | null;
+  decided_by: string | null;
 };
 
 const DEFAULT_LIMIT = 50;
@@ -384,5 +398,48 @@ export async function resolvePropTool(
     ok: true,
     data: read.detail,
     summary: `Resolved prop ${read.detail.id}`,
+  };
+}
+
+/**
+ * The suggestion queue, for a site admin (the core refuses anyone else, and
+ * the server only offers the tool to admins). Newest first; the undecided
+ * ones unless asked otherwise, since reviewing them is what the list is for.
+ */
+export async function listSuggestedPropsTool(
+  caller: VUser,
+  args: { status?: SuggestionStatus | "all"; limit?: number } = {},
+): Promise<
+  ToolOutcome<{ suggestions: SuggestionResult[]; truncated: boolean }>
+> {
+  const result = await listSuggestedProps(caller);
+  if (!result.success) return fail(result.error);
+
+  const wanted = args.status ?? "undecided";
+  const limit = Math.min(
+    Math.max(Math.floor(args.limit ?? DEFAULT_LIMIT), 1),
+    MAX_LIMIT,
+  );
+  const matching = result.data
+    .map((s): SuggestionResult => ({
+      id: s.id,
+      text: s.prop_text,
+      notes: s.notes,
+      suggested_by: { id: s.user_id, name: s.user_name, email: s.user_email },
+      suggested_at: s.created_at.toISOString(),
+      status: s.status ?? "undecided",
+      decided_at: iso(s.decided_at),
+      decided_by: s.decided_by_name,
+    }))
+    .filter((s) => wanted === "all" || s.status === wanted)
+    .sort(
+      (a, b) => b.suggested_at.localeCompare(a.suggested_at) || b.id - a.id,
+    );
+  const suggestions = matching.slice(0, limit);
+
+  return {
+    ok: true,
+    data: { suggestions, truncated: matching.length > suggestions.length },
+    summary: `${suggestions.length} ${wanted === "all" ? "" : `${wanted} `}suggestion(s)${matching.length > suggestions.length ? ` of ${matching.length}` : ""}`,
   };
 }

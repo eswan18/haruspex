@@ -25,6 +25,7 @@ import { featureEnabled } from "@/lib/core/feature-flags";
 import { listCategories } from "@/lib/core/categories";
 import { listCompetitions } from "@/lib/core/competitions";
 import { listProps, getProp } from "@/lib/core/props";
+import { listSuggestedProps } from "@/lib/core/suggested-props";
 
 describe("core reads under row-level security", () => {
   let db: Kysely<Database>;
@@ -268,6 +269,40 @@ describe("core reads under row-level security", () => {
       const result = await listCategories(null);
       expect(result.success).toBe(true);
       if (result.success) expect(result.data.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe("listSuggestedProps", () => {
+    async function suggest(userId: number) {
+      const row = await db
+        .insertInto("suggested_props")
+        .values({ suggester_user_id: userId, prop: "Will it snow in May?" })
+        .returning("id")
+        .executeTakeFirstOrThrow();
+      getTestTracker().trackId("suggested_props", row.id);
+      return row.id;
+    }
+
+    ifRunningContainerTestsIt(
+      "returns the suggestions to a site admin",
+      async () => {
+        const suggester = await factory.createUser();
+        const id = await suggest(suggester.id);
+        const admin = await factory.createAdminUser();
+        const result = await listSuggestedProps(admin as unknown as VUser);
+        expect(result.success).toBe(true);
+        if (result.success) {
+          expect(result.data.map((s) => s.id)).toContain(id);
+        }
+      },
+    );
+
+    ifRunningContainerTestsIt("refuses anyone else", async () => {
+      const reader = await factory.createUser();
+      await suggest(reader.id);
+      const result = await listSuggestedProps(reader as unknown as VUser);
+      expect(result.success).toBe(false);
+      if (!result.success) expect(result.code).toBe("UNAUTHORIZED");
     });
   });
 });

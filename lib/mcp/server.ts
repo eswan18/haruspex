@@ -16,10 +16,12 @@ import {
   listCategoriesTool,
   listCompetitionsTool,
   listPropsTool,
+  listSuggestedPropsTool,
   resolvePropTool,
   type CompetitionResult,
   type PropDetail,
   type PropResult,
+  type SuggestionResult,
   type ToolOutcome,
 } from "./tools";
 
@@ -95,6 +97,23 @@ const competitionResult = z.object({
   can_add_props: z.boolean(),
 });
 
+const suggestionStatus = z.enum(["undecided", "accepted", "rejected"]);
+
+const suggestionResult = z.object({
+  id: z.number().int(),
+  text: z.string(),
+  notes: z.string().nullable(),
+  suggested_by: z.object({
+    id: z.number().int(),
+    name: z.string(),
+    email: z.string(),
+  }),
+  suggested_at: z.string(),
+  status: suggestionStatus,
+  decided_at: z.string().nullable(),
+  decided_by: z.string().nullable(),
+});
+
 /**
  * The output schemas restate lib/mcp/tools' result types, and the SDK rejects
  * any result that does not match its schema -- so a drift between the two
@@ -106,7 +125,8 @@ const schemasMatchResultTypes: {
   competition: Same<z.infer<typeof competitionResult>, CompetitionResult>;
   prop: Same<z.infer<typeof propResult>, PropResult>;
   detail: Same<z.infer<typeof propDetail>, PropDetail>;
-} = { competition: true, prop: true, detail: true };
+  suggestion: Same<z.infer<typeof suggestionResult>, SuggestionResult>;
+} = { competition: true, prop: true, detail: true, suggestion: true };
 void schemasMatchResultTypes;
 
 // --- result mapping -------------------------------------------------------
@@ -276,6 +296,33 @@ export function buildMcpServer(caller: VUser): McpServer {
     async (args, ctx) =>
       lacksWriteScope(ctx) ?? toResult(await resolvePropTool(caller, args)),
   );
+
+  // Site admins only: everyone else's agent never sees the tool, and the core
+  // refuses them anyway.
+  if (caller.is_admin) {
+    server.registerTool(
+      "list_suggested_props",
+      {
+        title: "List suggested props",
+        description:
+          "Site admins only. List props readers have suggested, newest first, with who suggested each and any notes on how to settle it. By default only the undecided ones (the review queue); pass status to see accepted, rejected, or all. truncated is true when more matched than limit (default 50).",
+        inputSchema: z.object({
+          status: z
+            .enum(["undecided", "accepted", "rejected", "all"])
+            .optional()
+            .describe("Which suggestions to list. Default: undecided."),
+          limit: z.number().int().min(1).max(200).optional(),
+        }),
+        outputSchema: z.object({
+          suggestions: z.array(suggestionResult),
+          truncated: z.boolean(),
+        }),
+        annotations: READ_ONLY,
+        scopeChallenge: readScope,
+      },
+      async (args) => toResult(await listSuggestedPropsTool(caller, args)),
+    );
+  }
 
   return server;
 }
