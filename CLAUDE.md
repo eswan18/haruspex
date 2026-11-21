@@ -110,6 +110,33 @@ This codebase follows a structured server action pattern that returns results in
   mail; `POST /api/unsubscribe` **acts**, and is what a mail client's own
   one-click button uses (RFC 8058).
 
+### MCP
+
+`/mcp` is an MCP server (streamable HTTP) so an agent such as claude.ai or
+Claude Code can read and write props as the signed-in reader. The rules live
+in `lib/core/` (competitions, props, categories, feature flags); the web's
+server actions and the MCP tools in `lib/mcp/tools.ts` are both thin callers of
+it. The protocol layer is `lib/mcp/` (`auth.ts` is the token gate, `server.ts`
+registers the tools) and the routes are `app/mcp/route.ts` and
+`app/.well-known/oauth-protected-resource/mcp/route.ts`.
+
+- **Two scopes**, issued by identity: `haruspex:read` and `haruspex:write`.
+  Write tools refuse a read-only token even if the gate let it in.
+- **Tools see the "member" view** (`lib/core/views.ts`), even for site admins:
+  personal props only the caller's own, private competitions only where they
+  are a member. Admin pages keep the "rls" view. An agent acting for an admin
+  should not surface what the admin merely *could* see.
+- **Never put `use server` in `lib/core`.** It would turn every export into a
+  public endpoint callable from the browser. Server actions wrap core
+  functions; they are not the core.
+- **New agent-reachable rules go in the core**, not in a tool or an action, so
+  the web and the agent cannot disagree. `createProp` is the model: it checks
+  the `personal-props` flag and `canCreateProps` for both callers.
+- The gate fails closed: 401 (no or bad token), 403 (no `haruspex` scope,
+  unknown or deactivated user), 503 (`MCP_RESOURCE_URL`/`IDP_PUBLIC_URL`
+  unset, or identity's keys unreachable). A user must have signed in to the
+  site once before their token works.
+
 ### Local Development Setup
 
 1. Spin up local PostgreSQL: `docker compose --env-file .env.prod -f local-pg-container.yaml up`

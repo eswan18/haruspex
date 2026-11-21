@@ -1,7 +1,7 @@
 "use server";
 
 import { db } from "@/lib/database";
-import { sql } from "kysely";
+import { featureEnabled } from "@/lib/core/feature-flags";
 import { getUserFromCookies } from "../get-user";
 import { NewFeatureFlag, VFeatureFlag } from "@/types/db_types";
 import { revalidatePath } from "next/cache";
@@ -27,49 +27,24 @@ export async function hasFeatureEnabled({
     currentUserId: currentUser?.id,
   });
 
-  const startTime = Date.now();
-  try {
-    // Make sure the user is who they say they are.
-    if (!currentUser || currentUser.id !== userId) {
-      logger.warn("Unauthorized feature flag check", {
-        featureName,
-        userId,
-        currentUserId: currentUser?.id,
-      });
-      return error("Unauthorized", ERROR_CODES.UNAUTHORIZED);
-    }
-
-    const result = await db
-      .selectFrom("feature_flags")
-      .select("enabled")
-      .where("name", "=", featureName)
-      .where((eb) => eb("user_id", "=", userId).or("user_id", "is", null))
-      // By putting nulls last, we allow a blanket toggle for all users to be overriden by a specific user's setting.
-      .orderBy(sql`user_id nulls last`)
-      .executeTakeFirst();
-
-    // Assume unset flags are disabled.
-    const enabled = result?.enabled ?? false;
-
-    const duration = Date.now() - startTime;
-    logger.info("Feature flag check completed", {
-      operation: "hasFeatureEnabled",
-      table: "feature_flags",
+  // Make sure the user is who they say they are.
+  if (!currentUser || currentUser.id !== userId) {
+    logger.warn("Unauthorized feature flag check", {
       featureName,
       userId,
-      enabled,
-      duration,
+      currentUserId: currentUser?.id,
     });
+    return error("Unauthorized", ERROR_CODES.UNAUTHORIZED);
+  }
 
-    return success(enabled);
+  try {
+    return success(await featureEnabled(userId, featureName));
   } catch (err) {
-    const duration = Date.now() - startTime;
     logger.error("Failed to check feature flag", err as Error, {
       operation: "hasFeatureEnabled",
       table: "feature_flags",
       featureName,
       userId,
-      duration,
     });
     return error("Failed to check feature flag", ERROR_CODES.DATABASE_ERROR);
   }

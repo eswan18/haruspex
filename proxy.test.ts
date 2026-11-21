@@ -106,6 +106,31 @@ describe("proxy: the Sentry tunnel works without a session", () => {
   });
 });
 
+describe("proxy: MCP routes authenticate themselves", () => {
+  // /mcp answers with its own bearer-token 401s, which is what starts an MCP
+  // client's sign-in; a redirect to /login would be read as a failure. The
+  // protected resource metadata is public by definition (RFC 9728).
+  it("passes a cookieless POST to /mcp through", async () => {
+    const { proxy } = await import("./proxy");
+    const res = await proxy(
+      new NextRequest("http://localhost/mcp", { method: "POST", body: "{}" }),
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("location")).toBeNull();
+    expect(res.headers.get("x-middleware-next")).toBe("1");
+  });
+
+  it("passes the protected resource metadata through", async () => {
+    const { proxy } = await import("./proxy");
+    const res = await proxy(
+      makeRequest("/.well-known/oauth-protected-resource/mcp"),
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("location")).toBeNull();
+    expect(res.headers.get("x-middleware-next")).toBe("1");
+  });
+});
+
 describe("proxy: protected routes with no token", () => {
 
   it("redirects to /login when no token cookie exists", async () => {
