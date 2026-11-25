@@ -77,9 +77,6 @@ const ownCss = `
   font-size: 0.8125rem;
   overflow-wrap: anywhere;
 }
-.hxp .prose dl { margin: 0 0 1rem; }
-.hxp .prose dt { font-weight: 700; }
-.hxp .prose dd { margin: 0 0 0.75rem; color: var(--ink-muted); }
 `;
 
 function Topic({ id, children }: { id: SectionId; children: ReactNode }) {
@@ -159,12 +156,16 @@ export function HelpSheet({
             Competitions are collections of props. There are both public and
             private competitions.
           </p>
-          <dl>
-            <dt>Public seasons</dt>
-            <dd>Open to everyone with an account. Usually annual.</dd>
-            <dt>Private competitions</dt>
-            <dd>Visible only to members. No set schedule.</dd>
-          </dl>
+          <ul>
+            <li>
+              <strong>Public seasons:</strong> Open to everyone with an account.
+              Usually annual.
+            </li>
+            <li>
+              <strong>Private competitions:</strong> Visible only to members. No
+              set schedule.
+            </li>
+          </ul>
         </Topic>
 
         <Topic id="suggesting">
@@ -177,14 +178,13 @@ export function HelpSheet({
 
         <Topic id="email">
           <p>Haruspex can email you about:</p>
-          <dl>
+          <ul>
             {optionalEmails.map((spec) => (
-              <div key={spec.label}>
-                <dt>{spec.label}</dt>
-                <dd>{spec.description}</dd>
-              </div>
+              <li key={spec.label}>
+                <strong>{spec.label}:</strong> {spec.description}
+              </li>
             ))}
-          </dl>
+          </ul>
           <p>
             Turn any of these off under{" "}
             <Link href="/account">Account Settings</Link>, or with the
