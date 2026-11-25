@@ -35,14 +35,14 @@ export const NOTIFICATIONS = {
     default: true,
     label: "Added to a competition",
     description:
-      "When someone adds you to a private competition, so you know it is there.",
+      "When someone adds you to a private competition.",
   },
   "competition.prop_added": {
     optional: true,
     default: true,
     label: "New props",
     description:
-      "When a prop is added to a competition of yours that opens each prop on its own deadline.",
+      "When a prop is added to an open competition of yours.",
   },
   // An admin writing to every active user at once, from /admin/announcements.
   // Unlike the one-to-one message it is not meant for this reader alone, so

@@ -13,13 +13,10 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Prod: Story = {
-  args: {
-    mcpUrl: "https://haruspex.fyi/mcp",
-    connectedAppsUrl: "https://identity.ethanswan.com/oauth/connected-apps",
-  },
+  args: { mcpUrl: "https://haruspex.fyi/mcp" },
 };
 
 /** A deployment with no MCP endpoint configured. */
 export const NoAssistantSetup: Story = {
-  args: { mcpUrl: null, connectedAppsUrl: null },
+  args: { mcpUrl: null },
 };

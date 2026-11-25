@@ -30,8 +30,8 @@ const sample: AdminStats = {
   suggestions: { pending: 5, accepted: 22, rejected: 9 },
   notifications: [
     { type: "admin.announcement", label: "Announcements", description: "Occasional messages to everyone on Haruspex, like the yearly call for prop ideas.", off: 2 },
-    { type: "competition.member_added", label: "Added to a competition", description: "When someone adds you to a private competition, so you know it is there.", off: 0 },
-    { type: "competition.prop_added", label: "New props", description: "When a prop is added to a competition of yours that opens each prop on its own deadline.", off: 4 },
+    { type: "competition.member_added", label: "Added to a competition", description: "When someone adds you to a private competition.", off: 0 },
+    { type: "competition.prop_added", label: "New props", description: "When a prop is added to an open competition of yours.", off: 4 },
   ],
   activeUsers: {
     today: 7,
