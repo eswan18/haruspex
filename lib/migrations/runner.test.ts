@@ -148,6 +148,24 @@ describe("describeConnection", () => {
 });
 
 describe("runMigrationCli", () => {
+  it("refuses Neon's pooled host, which cannot hold the migration lock", async () => {
+    const previous = process.env.DATABASE_URL;
+    process.env.DATABASE_URL =
+      "postgresql://owner:secret@ep-quiet-sky-123456-pooler.us-east-2.aws.neon.tech/neondb?sslmode=require";
+    const { io, error } = capturingIo();
+
+    try {
+      expect(await runMigrationCli({}, io)).toBe(1);
+      const message = error.join("\n");
+      expect(message).toContain("-pooler");
+      expect(message).toContain("direct");
+      expect(message).not.toContain("secret");
+    } finally {
+      if (previous === undefined) delete process.env.DATABASE_URL;
+      else process.env.DATABASE_URL = previous;
+    }
+  });
+
   it("fails without connecting when DATABASE_URL is unset", async () => {
     const previous = process.env.DATABASE_URL;
     delete process.env.DATABASE_URL;

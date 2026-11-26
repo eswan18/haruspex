@@ -338,31 +338,42 @@ a broken app start:
 
 ##### Staging and prod
 
-Every Haruspex pod in staging and prod starts with the same initContainer, named `migrate`
-(`k8s/haruspex-base/deployment.yaml`), so a deploy brings its database to the build's schema with no
-manual step:
+Every Haruspex pod in staging and prod starts with an initContainer named `migrate` (in each
+environment's `deployment-patch.yaml`, not the base: bifrost builds previews from the base and adds its
+own `migrate` initContainer), so a deploy brings its database to the build's schema with no manual
+step:
 
 - **Same image as the app**, so a build applies exactly its own migrations and never a newer one. A
-  build promoted to prod migrates prod when its first pod starts.
+  build promoted to prod migrates prod when its first pod starts. (Changes to these manifests reach
+  prod as soon as they merge — ArgoCD syncs prod's manifests from `main`; only the image waits for
+  `bif promote`.)
 - **As the database owner.** The app runs as `app_user`, which cannot create or alter anything. The
   initContainer reads `DATABASE_URL` from `haruspex-{env}-migrate-secrets`, backed by the Secret
   Manager secret `haruspex_{env}_migrate_database_url`: the `neondb_owner` connection string on
-  Neon's **direct** host, not the `-pooler` one. kysely holds a session-level advisory lock for the
-  whole run (that is what lets two pods start at once and apply each migration once), and PgBouncer in
-  transaction mode does not keep session locks. That credential has its own SecretProviderClass and
-  volume, mounted only by the initContainer, so it is never in the app container's environment or
-  files. That is not a hard boundary: a pod has one service account, and the CSI driver fetches the
-  secret with it, so code running in the app container could still ask Secret Manager for it.
-  Separating it fully would take a migration Job with its own service account.
+  Neon's **direct** host. kysely holds a session-level advisory lock for the whole run (that is what
+  lets two pods start at once and apply each migration once), and Neon's `-pooler` host is PgBouncer in
+  transaction mode, which does not keep session locks, so the runner refuses a `-pooler` host outright.
+  That credential has its own SecretProviderClass and volume, mounted only by the initContainer, so it
+  is never in the app container's environment or files. That is not a hard boundary: a pod has one
+  service account, and the CSI driver fetches the secret with it, so code running in the app container
+  could still ask Secret Manager for it. Separating it fully would take a migration Job with its own
+  service account.
 - **A failed migration** leaves the new pod in `Init` while the old pods keep serving (the rolling
   update never takes a pod down first at these replica counts). `kubectl logs <pod> -c migrate` shows
-  what failed; the database is left at the last migration that succeeded.
+  what failed. kysely runs the whole batch in one transaction on Postgres, so a failure rolls back
+  every migration in that run and the database is as it was before it. (The same transaction is why
+  `CREATE INDEX CONCURRENTLY` cannot go in a migration.)
+- **Old pods only keep serving while they live.** Once a new build has migrated, an old pod that is
+  recreated — a spot preemption, an eviction — runs the old image's runner against the newer
+  database. kysely refuses, the runner says the database is ahead of the build, and that pod waits in
+  `Init`. So if a migrated build's app then fails to come up, the old pods drain away one by one:
+  fix it by rolling forward.
 - **Rolling back** to an older image after its successor's migrations have run leaves the new pods
-  refusing to boot, since the startup check rejects a database ahead of the code. Roll forward instead,
-  or migrate down by hand first.
+  refusing to start for the same reason. Roll forward instead, or migrate down by hand first.
 
 `k8s/manifests.test.ts` pins the parts a copy-paste could break: the initContainer's image matches the
-app's, each environment reads its own owner secret, and the app container never sees it.
+app's, each environment reads its own owner secret, the app container never sees it, and the base
+carries no initContainer of its own.
 
 ##### Running it by hand
 

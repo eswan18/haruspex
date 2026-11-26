@@ -26,21 +26,14 @@ const named = (list: Doc[] | undefined, name: string): Doc =>
 const base = load("haruspex-base", "deployment.yaml");
 const baseSpec = base.spec.template.spec;
 const baseApp = named(baseSpec.containers, "haruspex");
-const baseMigrate = named(baseSpec.initContainers, "migrate");
 
-describe("the migrate initContainer", () => {
-  it("runs this build's runner, with the app's image", () => {
-    expect(baseSpec.initContainers).toHaveLength(1);
-    expect(baseMigrate).toBeDefined();
-    // Byte-identical, so ArgoCD's kustomize image override replaces both.
-    expect(baseMigrate.image).toBe(baseApp.image);
-    expect(baseMigrate.command).toEqual(RUNNER);
-    expect(baseMigrate.securityContext).toEqual(baseApp.securityContext);
-    expect(named(baseMigrate.volumeMounts, "migrate-secrets")).toEqual({
-      name: "migrate-secrets",
-      mountPath: "/mnt/migrate",
-      readOnly: true,
-    });
+describe("the base", () => {
+  it("has no initContainer or owner volume of its own", () => {
+    // bifrost renders previews from the base and adds its own `migrate`
+    // initContainer, then strips the base's volumes; a mount left behind in
+    // the base would point at a volume that no longer exists.
+    expect(baseSpec.initContainers).toBeUndefined();
+    expect(named(baseSpec.volumes, "migrate-secrets")).toBeUndefined();
   });
 });
 
@@ -48,6 +41,20 @@ describe.each(ENVS)("%s", (env) => {
   const secret = `haruspex-${env}-migrate-secrets`;
   const patch = load(`haruspex-${env}`, "deployment-patch.yaml");
   const patchSpec = patch.spec.template.spec;
+
+  it("runs this build's runner, with the app's image", () => {
+    expect(patchSpec.initContainers).toHaveLength(1);
+    const migrate = named(patchSpec.initContainers, "migrate");
+    // The same image name, so ArgoCD's kustomize image override replaces both.
+    expect(migrate.image).toBe(baseApp.image);
+    expect(migrate.command).toEqual(RUNNER);
+    expect(migrate.securityContext).toEqual(baseApp.securityContext);
+    expect(named(migrate.volumeMounts, "migrate-secrets")).toEqual({
+      name: "migrate-secrets",
+      mountPath: "/mnt/migrate",
+      readOnly: true,
+    });
+  });
 
   it("gives the initContainer its own environment's owner credential", () => {
     const migrate = named(patchSpec.initContainers, "migrate");
