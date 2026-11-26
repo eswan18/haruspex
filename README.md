@@ -239,7 +239,11 @@ npx tsx scripts/generate-migration-manifest.ts
 
 #### How do I run new migrations?
 
-Obviously it's best to do this in the staging DB and make sure all is well before going to prod.
+**Staging and prod run them on deploy** — a `migrate` initContainer applies them before the app starts
+(see "Staging and prod" under "Applying migrations from inside the image" below). Merging a migration
+is enough: it reaches staging with the next build and prod when that build is promoted.
+
+For any other database (your local copy, say):
 
 ```bash
 DATABASE_URL='...' npm exec kysely migrate up
@@ -265,8 +269,9 @@ and how to fix it, then **exits non-zero**. It does *not* throw: Next.js swallow
 `register()` and leaves the server up answering every request (including `/api/health`) with a 500, which
 is the ambiguous half-alive state this check exists to eliminate.
 
-**The check never applies migrations.** Running them stays a separate, deliberate act
-(`DATABASE_URL='...' npm exec kysely migrate up`). Failing loudly at boot is far easier to debug than
+**The check never applies migrations.** Running them is a separate step: in staging, prod and previews
+the `migrate` initContainer does it before the app container starts; anywhere else it is
+`DATABASE_URL='...' npm exec kysely migrate up`. Failing loudly at boot is far easier to debug than
 discovering a missing column at runtime, from whichever query happens to touch it first.
 
 ##### It fails closed everywhere, including local dev
@@ -330,6 +335,31 @@ a broken app start:
 - `1` — `DATABASE_URL` unset, database unreachable, a migration failed, the database is ahead of the
   build (kysely refuses a migration table holding names it doesn't know), or the compiled set is not
   the manifest.
+
+##### Staging and prod
+
+Every Haruspex pod in staging and prod starts with the same initContainer, named `migrate`
+(`k8s/haruspex-base/deployment.yaml`), so a deploy brings its database to the build's schema with no
+manual step:
+
+- **Same image as the app**, so a build applies exactly its own migrations and never a newer one. A
+  build promoted to prod migrates prod when its first pod starts.
+- **As the database owner.** The app runs as `app_user`, which cannot create or alter anything. The
+  initContainer reads `DATABASE_URL` from `haruspex-{env}-migrate-secrets`, backed by the Secret
+  Manager secret `haruspex_{env}_migrate_database_url`: the `neondb_owner` connection string on
+  Neon's **direct** host, not the `-pooler` one. kysely holds a session-level advisory lock for the
+  whole run (that is what lets two pods start at once and apply each migration once), and PgBouncer in
+  transaction mode does not keep session locks. That credential has its own SecretProviderClass and
+  volume, mounted only by the initContainer, so the app container never holds it.
+- **A failed migration** leaves the new pod in `Init` while the old pods keep serving (the rolling
+  update never takes a pod down first at these replica counts). `kubectl logs <pod> -c migrate` shows
+  what failed; the database is left at the last migration that succeeded.
+- **Rolling back** to an older image after its successor's migrations have run leaves the new pods
+  refusing to boot, since the startup check rejects a database ahead of the code. Roll forward instead,
+  or migrate down by hand first.
+
+`k8s/manifests.test.ts` pins the parts a copy-paste could break: the initContainer's image matches the
+app's, each environment reads its own owner secret, and the app container never sees it.
 
 ##### Running it by hand
 

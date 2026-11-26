@@ -42,7 +42,7 @@ This is a Next.js forecasting application inspired by Philip Tetlock's Good Judg
 ### Database Migrations
 
 - `npm exec kysely migrate make <migration-description>` - Create new migration
-- `DATABASE_URL='...' npm exec kysely migrate up` - Run migrations
+- `DATABASE_URL='...' npm exec kysely migrate up` - Run migrations (local databases; staging and prod run them on deploy in the `migrate` initContainer, see the README)
 
 ## Code Architecture
 
