@@ -131,6 +131,16 @@ export default async function globalSetup(): Promise<void> {
     fs.writeFileSync(STATE.seed, JSON.stringify(data, null, 2));
     await writeStorageState(STATE.user, stub, data.user);
     await writeStorageState(STATE.admin, stub, data.admin);
+    // Only this process holds the stub's signing key, so the token a spec
+    // needs for the wrong-audience check is minted here.
+    fs.writeFileSync(
+      STATE.wrongAudienceToken,
+      await stub.mintToken({
+        sub: data.user.idp_user_id!,
+        email: data.user.email,
+        aud: "ethanswan:other",
+      }),
+    );
   } finally {
     await db.destroy();
   }

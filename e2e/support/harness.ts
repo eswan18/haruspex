@@ -60,6 +60,11 @@ export const STATE = {
   admin: path.join(STATE_DIR, "admin.json"),
   /** The `Seed` rows, as JSON. */
   seed: path.join(STATE_DIR, "seed.json"),
+  /**
+   * A session token for `Seed.user` that the IdP stub signed for another
+   * app's audience (`ethanswan:other`), as plain text. The app must refuse it.
+   */
+  wrongAudienceToken: path.join(STATE_DIR, "wrong-audience-token.txt"),
 };
 const PIDFILE = path.join(STATE_DIR, "pids.json");
 const APP_LOG = path.join(ROOT, "test-results", "app.log");

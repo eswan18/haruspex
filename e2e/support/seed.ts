@@ -28,6 +28,17 @@ export interface Seed {
   openProp: TestProp;
   /** Binary, in `competition`, resolved yes, with an 80% forecast from `user`. */
   resolvedProp: TestProp;
+  /**
+   * A second public competition for the standings check, so that check does
+   * not depend on whether the forecast check has run. Its one prop is
+   * resolved yes with an 80% forecast from `user`: `user` has forecast every
+   * prop in it, so they are ranked there, with a Brier score of 0.040.
+   */
+  standingsCompetition: TestCompetition;
+  /** A third public competition for the resolve check, which changes it. */
+  resolveCompetition: TestCompetition;
+  /** Binary, unresolved, in `resolveCompetition`. */
+  resolvableProp: TestProp;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -78,5 +89,40 @@ export async function seed(db: Kysely<Database>): Promise<Seed> {
   await factory.createForecast(user.id, resolvedProp.id, { forecast: 0.8 });
   await factory.createResolution(resolvedProp.id, { resolution: true });
 
-  return { user, admin, competition, openProp, resolvedProp };
+  const standingsCompetition = await factory.createCompetition({
+    name: "E2E Standings Competition",
+    is_private: false,
+    forecasts_open_date: new Date(now - 7 * DAY_MS),
+    forecasts_close_date: new Date(now + 30 * DAY_MS),
+    end_date: new Date(now + 60 * DAY_MS),
+  });
+  const standingsProp = await factory.createCompetitionProp(
+    standingsCompetition.id,
+    { text: "E2E standings prop", kind: "binary" },
+  );
+  await factory.createForecast(user.id, standingsProp.id, { forecast: 0.8 });
+  await factory.createResolution(standingsProp.id, { resolution: true });
+
+  const resolveCompetition = await factory.createCompetition({
+    name: "E2E Resolve Competition",
+    is_private: false,
+    forecasts_open_date: new Date(now - 7 * DAY_MS),
+    forecasts_close_date: new Date(now + 30 * DAY_MS),
+    end_date: new Date(now + 60 * DAY_MS),
+  });
+  const resolvableProp = await factory.createCompetitionProp(
+    resolveCompetition.id,
+    { text: "E2E prop to resolve", kind: "binary" },
+  );
+
+  return {
+    user,
+    admin,
+    competition,
+    openProp,
+    resolvedProp,
+    standingsCompetition,
+    resolveCompetition,
+    resolvableProp,
+  };
 }
