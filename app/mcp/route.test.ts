@@ -66,6 +66,7 @@ const prop: PropDetail = {
   status: "open",
   resolution: null,
   notes: null,
+  resolution_notes: null,
   your_forecast: null,
 };
 

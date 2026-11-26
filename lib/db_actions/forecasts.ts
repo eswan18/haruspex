@@ -457,12 +457,14 @@ export async function getUnforecastedProps({
 
   const startTime = Date.now();
   try {
-    // Fetch props without a corresponding entry in the forecasts table for that user.
+    // Fetch props without a corresponding entry in the forecasts table for
+    // that user. A voided prop is owed by nobody.
     const results = await withRLS(currentUser?.id, async (trx) => {
       return await trx
         .selectFrom("v_props")
         .selectAll()
         .where("competition_id", "=", competitionId)
+        .where("resolution_voided", "is not", true)
         .where(({ not, exists, selectFrom }) =>
           not(
             exists(
@@ -607,12 +609,14 @@ export async function getRecentlyResolvedForecasts({
   try {
     const results = await withRLS(currentUser?.id, async (trx) => {
       // A resolved choice prop has a null `resolution`; only `resolution_id`
-      // says whether a prop of any kind is resolved.
+      // says whether a prop of any kind is resolved. A void has no outcome to
+      // set a forecast against, so it is left out.
       const rows = await trx
         .selectFrom("v_forecasts")
         .selectAll()
         .where("user_id", "=", userId)
         .where("resolution_id", "is not", null)
+        .where("resolution_voided", "=", false)
         .orderBy("resolution_updated_at", "desc")
         .limit(limit)
         .execute();

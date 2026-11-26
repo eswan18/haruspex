@@ -32,6 +32,7 @@ import {
   CHOICES,
   DEFAULT_CHOICE,
   TAB_PARAM,
+  forecastProgress,
   matches,
   resolveChoice,
   type Choice,
@@ -170,6 +171,7 @@ const STATUS_WORD: Record<string, string> = {
   "resolved-yes": "Resolved · Yes",
   "resolved-no": "Resolved · No",
   resolved: "Resolved",
+  voided: "Voided",
   open: "",
 };
 
@@ -443,8 +445,8 @@ export function OpenProps({
     });
   }, [props, query, category, choice]);
 
-  const done = props.filter((p) => p.user_forecast_id !== null).length;
-  const left = props.length - done;
+  const { done, total } = forecastProgress(props);
+  const left = total - done;
 
   return (
     <div className="hxp">
@@ -465,8 +467,8 @@ export function OpenProps({
               {" "}
               ·{" "}
               {left > 0
-                ? `${done} of ${props.length} forecast`
-                : `all ${props.length} forecast`}
+                ? `${done} of ${total} forecast`
+                : `all ${total} forecast`}
             </span>
           </span>
           <span className="asides">

@@ -3,6 +3,7 @@ import {
   getPropStatus,
   getPropStatusFromProp,
   getPropStatusLabel,
+  isOpenInCompetition,
   PropStatus,
 } from "./prop-status";
 
@@ -162,5 +163,95 @@ describe("choice props", () => {
 
   it("labels resolved as Resolved", () => {
     expect(getPropStatusLabel("resolved")).toBe("Resolved");
+  });
+});
+
+describe("voided props", () => {
+  const now = new Date("2024-06-15T12:00:00Z");
+  const future = new Date("2024-06-20T12:00:00Z");
+  const past = new Date("2024-06-10T12:00:00Z");
+
+  it("reads voided even before the deadline", () => {
+    expect(
+      getPropStatus(future, null, {
+        currentDate: now,
+        isResolved: true,
+        isVoided: true,
+      }),
+    ).toBe("voided");
+  });
+
+  it("reads voided after the deadline, not resolved", () => {
+    expect(
+      getPropStatus(past, null, {
+        currentDate: now,
+        isResolved: true,
+        isVoided: true,
+      }),
+    ).toBe("voided");
+  });
+
+  it("getPropStatusFromProp reads resolution_voided", () => {
+    const base = {
+      prop_forecasts_due_date: past,
+      competition_forecasts_close_date: null,
+      competition_is_private: null,
+      resolution: null,
+      resolution_id: 7,
+    };
+    expect(
+      getPropStatusFromProp(
+        { ...base, resolution_voided: true },
+        { currentDate: now },
+      ),
+    ).toBe("voided");
+    expect(
+      getPropStatusFromProp(
+        { ...base, resolution_voided: false },
+        { currentDate: now },
+      ),
+    ).toBe("resolved");
+  });
+
+  it("labels it Voided", () => {
+    expect(getPropStatusLabel("voided")).toBe("Voided");
+  });
+});
+
+describe("isOpenInCompetition", () => {
+  const now = new Date("2024-06-15T12:00:00Z");
+  const future = new Date("2024-06-20T12:00:00Z");
+  const past = new Date("2024-06-10T12:00:00Z");
+  const prop = (over: Record<string, unknown> = {}) => ({
+    prop_forecasts_due_date: null,
+    competition_forecasts_close_date: future,
+    resolution_voided: null,
+    ...over,
+  });
+
+  it("is open before the season's deadline in a public competition", () => {
+    expect(isOpenInCompetition(prop(), false, now)).toBe(true);
+    expect(
+      isOpenInCompetition(
+        prop({ competition_forecasts_close_date: past }),
+        false,
+        now,
+      ),
+    ).toBe(false);
+  });
+
+  it("reads the prop's own deadline in a private competition", () => {
+    expect(
+      isOpenInCompetition(prop({ prop_forecasts_due_date: past }), true, now),
+    ).toBe(false);
+    expect(
+      isOpenInCompetition(prop({ prop_forecasts_due_date: null }), true, now),
+    ).toBe(true);
+  });
+
+  it("is closed once voided, even before the deadline", () => {
+    expect(
+      isOpenInCompetition(prop({ resolution_voided: true }), false, now),
+    ).toBe(false);
   });
 });

@@ -21,6 +21,7 @@ const basePropRow = {
   competition_is_private: false,
   competition_forecasts_open_date: day(-120),
   resolution_user_id: null,
+  resolution_voided: null,
   user_forecast: 0.3,
   user_forecast_id: 900,
   community_average: 0.46,
@@ -56,6 +57,7 @@ export const resolvedProp: PropWithUserForecast = {
   prop_resolution_due_date: day(-2),
   competition_forecasts_close_date: day(-60),
   resolution_id: 7,
+  resolution_voided: false,
   resolution: true,
   resolution_notes: "Closed at $163,410 on Coinbase. Resolved **Yes**.",
 };

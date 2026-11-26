@@ -15,6 +15,7 @@ import { VUser } from "@/types/db_types";
 import { COMPETITION_PARAM, CompetitionPicker } from "./competition-picker";
 import { ErrorToast } from "./error-toast";
 import { ForecastProgressMeter, meterCss } from "./forecast-progress-meter";
+import { userProgress } from "./progress";
 
 const ownCss = `
 /* The page's one figure, set the way every sheet sets the argument it opens
@@ -232,21 +233,17 @@ export default async function ForecastProgressPage({
     const unforecasted = unforecastedPropsResults.find(
       (u) => u.userId === user.id,
     );
-    const unforecastedCount = unforecasted?.result.success
-      ? unforecasted.result.data.length
-      : 0;
     const forecasted = forecastedPropsResults.find((u) => u.userId === user.id);
-    const forecastedCount = forecasted?.result.success
-      ? forecasted.result.data.length
-      : 0;
-    const total = forecastedCount + unforecastedCount;
     return {
       user,
       // Both halves have to have landed for the row's counts to mean anything.
       loaded: !!unforecasted?.result.success && !!forecasted?.result.success,
-      unforecasted: unforecastedCount,
-      forecasted: forecastedCount,
-      percentComplete: total > 0 ? forecastedCount / total : 0,
+      ...userProgress({
+        forecasts: forecasted?.result.success ? forecasted.result.data : [],
+        unforecasted: unforecasted?.result.success
+          ? unforecasted.result.data.length
+          : 0,
+      }),
     };
   });
 

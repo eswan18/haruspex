@@ -52,12 +52,14 @@ export type PropResult = {
   category: { id: number; name: string } | null;
   forecasts_due_date: string | null;
   resolution_due_date: string | null;
-  status: "open" | "closed" | "resolved";
+  status: "open" | "closed" | "resolved" | "voided";
   resolution: boolean | null;
 };
 
 export type PropDetail = PropResult & {
   notes: string | null;
+  /** How it was settled, or why it was voided. Null while unresolved. */
+  resolution_notes: string | null;
   your_forecast: number | null;
 };
 
@@ -114,7 +116,7 @@ type PropRow = Omit<PropWithOptions, "options"> &
 
 function propStatus(prop: PropRow): PropResult["status"] {
   const status = getPropStatusFromProp(prop);
-  if (status === "open") return "open";
+  if (status === "open" || status === "voided") return status;
   return status === "unresolved" ? "closed" : "resolved";
 }
 
@@ -151,6 +153,7 @@ function propDetail(
   return {
     ...propResult(prop),
     notes: prop.prop_notes,
+    resolution_notes: prop.resolution_notes,
     your_forecast: prop.user_forecast ?? null,
   };
 }
@@ -206,7 +209,7 @@ export async function listPropsTool(
   args: {
     competition?: number | string;
     personal?: boolean;
-    status?: "open" | "closed" | "resolved";
+    status?: PropResult["status"];
     limit?: number;
   },
 ): Promise<ToolOutcome<{ props: PropResult[]; truncated: boolean }>> {
@@ -365,6 +368,7 @@ export async function resolvePropTool(
     prop_id: number;
     resolution?: boolean;
     outcomes?: { option_id: number; outcome: boolean }[];
+    voided?: boolean;
     notes?: string;
     overwrite?: boolean;
   },
@@ -381,6 +385,7 @@ export async function resolvePropTool(
       optionId: o.option_id,
       outcome: o.outcome,
     })),
+    voided: args.voided,
     notes: args.notes,
     overwrite: args.overwrite,
   });
@@ -397,7 +402,7 @@ export async function resolvePropTool(
   return {
     ok: true,
     data: read.detail,
-    summary: `Resolved prop ${read.detail.id}`,
+    summary: `${args.voided ? "Voided" : "Resolved"} prop ${read.detail.id}`,
   };
 }
 

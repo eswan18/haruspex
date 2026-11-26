@@ -326,6 +326,11 @@ export async function resolveRefusal(
  * (an `enforce_resolution_kind` trigger insists on that) with one
  * `resolution_options` row per option. Header and children are written in the
  * same transaction, so a rejected resolution leaves nothing behind.
+ *
+ * A void (`voided: true`, for any kind) is the third way to settle a prop: no
+ * `resolution`, no `outcomes`, scored for nobody. Its header carries a null
+ * `resolution` and no option rows, so voiding a resolved choice prop deletes
+ * the old outcomes. Overwriting a void with an answer clears the flag.
  */
 export async function resolveProp(
   currentUser: VUser,
@@ -333,14 +338,17 @@ export async function resolveProp(
     propId,
     resolution,
     outcomes,
+    voided = false,
     notes,
     overwrite = false,
   }: {
     propId: number;
-    /** Required for yes/no props, forbidden for choice ones. */
+    /** Required for yes/no props, forbidden for choice ones and for a void. */
     resolution?: boolean;
-    /** Required for choice props, forbidden for yes/no ones. */
+    /** Required for choice props, forbidden for yes/no ones and for a void. */
     outcomes?: OptionOutcome[];
+    /** Settles the prop with no outcome; scored for nobody. */
+    voided?: boolean;
     notes?: string;
     overwrite?: boolean;
   },
@@ -349,9 +357,16 @@ export async function resolveProp(
     propId,
     resolution,
     outcomeCount: outcomes?.length,
+    voided,
     overwrite,
     currentUserId: currentUser.id,
   });
+
+  // A server action takes whatever the browser sends, and a truthy string
+  // would pass as a void below and then be stored as false.
+  if (typeof voided !== "boolean") {
+    return error("voided must be true or false", ERROR_CODES.VALIDATION_ERROR);
+  }
 
   const startTime = Date.now();
   // Captured inside the transaction so the success log can name the kind; the
@@ -374,20 +389,34 @@ export async function resolveProp(
       const kind = prop.prop_kind;
       resolvedKind = kind;
       const choice = isChoiceKind(kind);
-      if (!choice && (resolution === undefined || outcomes !== undefined)) {
+      if (voided && (resolution !== undefined || outcomes !== undefined)) {
+        return error(
+          "A void carries no resolution or outcomes",
+          ERROR_CODES.VALIDATION_ERROR,
+        );
+      }
+      if (
+        !voided &&
+        !choice &&
+        (resolution === undefined || outcomes !== undefined)
+      ) {
         return error(
           "Yes/no propositions resolve with a single true/false",
           ERROR_CODES.VALIDATION_ERROR,
         );
       }
-      if (choice && (outcomes === undefined || resolution !== undefined)) {
+      if (
+        !voided &&
+        choice &&
+        (outcomes === undefined || resolution !== undefined)
+      ) {
         return error(
           "Choice propositions resolve with an outcome per option",
           ERROR_CODES.VALIDATION_ERROR,
         );
       }
 
-      if (choice) {
+      if (choice && !voided) {
         const options = await trx
           .selectFrom("prop_options")
           .select("id")
@@ -414,7 +443,7 @@ export async function resolveProp(
       const existingResolution = await trx
         .selectFrom("resolutions")
         .where("prop_id", "=", propId)
-        .select(["id", "resolution"])
+        .select(["id", "resolution", "voided"])
         .executeTakeFirst();
       if (!!existingResolution && !overwrite) {
         logger.warn("Attempted to resolve prop that already has resolution", {
@@ -428,14 +457,24 @@ export async function resolveProp(
         );
       }
 
-      // Choice props hold their outcome in the child rows, not the header.
-      const headerValue = choice ? null : resolution!;
+      // Choice props hold their outcome in the child rows, not the header,
+      // and a void has no outcome at all.
+      const headerValue = choice || voided ? null : resolution!;
       let resolutionId: number;
       if (existingResolution) {
-        // Update the existing record.
+        // Update the existing record. Switching between a void and an answer
+        // is a new settlement: the old one's notes explain the wrong thing, so
+        // they go unless new ones came, and whoever made the switch is now the
+        // one who settled it.
+        const switched = existingResolution.voided !== voided;
         const updated = await trx
           .updateTable("resolutions")
-          .set({ resolution: headerValue, notes })
+          .set({
+            resolution: headerValue,
+            voided,
+            notes: switched ? (notes ?? null) : notes,
+            ...(switched ? { user_id: currentUser.id } : {}),
+          })
           .where("prop_id", "=", propId)
           .returning("id")
           .executeTakeFirstOrThrow();
@@ -446,6 +485,7 @@ export async function resolveProp(
         const record: NewResolution = {
           prop_id: propId,
           resolution: headerValue,
+          voided,
           // Who resolved it comes from the session, never the request. This
           // is a server action, so a caller-supplied author could name anyone,
           // and the only caller never sent one.
@@ -463,10 +503,13 @@ export async function resolveProp(
 
       if (choice) {
         // Overwriting replaces the whole set, so clear it before reinserting.
+        // A void keeps none (the database checks that at commit).
         await trx
           .deleteFrom("resolution_options")
           .where("resolution_id", "=", resolutionId)
           .execute();
+      }
+      if (choice && !voided) {
         await trx
           .insertInto("resolution_options")
           .values(
@@ -492,6 +535,7 @@ export async function resolveProp(
         kind: resolvedKind,
         resolution,
         outcomeCount: outcomes?.length,
+        voided,
         duration,
       });
     }

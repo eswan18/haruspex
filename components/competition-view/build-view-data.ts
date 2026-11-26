@@ -3,6 +3,7 @@ import {
   getCompetitionStatus,
   type CompetitionStatus,
 } from "@/lib/competition-status";
+import { isOpenInCompetition } from "@/lib/prop-status";
 import type { CompetitionScore } from "@/lib/db_actions";
 import type { Competition, PropWithUserForecast } from "@/types/db_types";
 import type { CompetitionViewData, SeasonPhase, Standing } from "./types";
@@ -57,10 +58,10 @@ export function buildViewData({
 }): CompetitionViewData {
   const isPrivate = competition.is_private;
 
-  const isOpen = (p: PropWithUserForecast) => {
-    const d = closeDateOf(p, isPrivate);
-    return d === null || new Date(d) > now;
-  };
+  // A void is settled even before its deadline, so it is neither open nor
+  // owed; the open-props page applies the same rule.
+  const isOpen = (p: PropWithUserForecast) =>
+    isOpenInCompetition(p, isPrivate, now);
   const isResolved = (p: PropWithUserForecast) => p.resolution_id !== null;
 
   const openProps = props.filter(isOpen);

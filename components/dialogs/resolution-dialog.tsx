@@ -15,15 +15,19 @@ import { resolveProp, unresolveProp } from "@/lib/db_actions/props";
 import { isChoiceKind } from "@/lib/prop-kind";
 import { useRouter } from "next/navigation";
 import { useServerAction } from "@/hooks/use-server-action";
+import {
+  initialBinaryChoice,
+  initialChoiceMode,
+  resolutionRequest,
+  type BinaryChoice,
+  type ChoiceMode,
+} from "./resolution-request";
 
 interface ResolutionDialogProps {
   prop: VProp & { options?: PropOptionSummary[] };
   isOpen: boolean;
   onClose: () => void;
 }
-
-type ResolutionOption = "true" | "false" | "unresolved";
-type ChoiceMode = "resolved" | "unresolved";
 
 export function ResolutionDialog({
   prop,
@@ -37,17 +41,11 @@ export function ResolutionDialog({
   // `one_of` has exactly one winner (radios); `any_of` any number (checkboxes).
   const singleWinner = prop.prop_kind === "one_of";
 
-  const [resolution, setResolution] = useState<ResolutionOption>(
-    prop.resolution === null
-      ? "unresolved"
-      : prop.resolution
-        ? "true"
-        : "false",
+  const [resolution, setResolution] = useState<BinaryChoice>(() =>
+    initialBinaryChoice(prop),
   );
-  // A resolved choice prop carries a null `resolution` on its header row, so
-  // the resolved/unresolved seed comes from `resolution_id`.
-  const [choiceMode, setChoiceMode] = useState<ChoiceMode>(
-    prop.resolution_id === null ? "unresolved" : "resolved",
+  const [choiceMode, setChoiceMode] = useState<ChoiceMode>(() =>
+    initialChoiceMode(prop),
   );
   const [winnerId, setWinnerId] = useState<number | null>(
     () => options.find((option) => option.outcome === true)?.option_id ?? null,
@@ -69,10 +67,11 @@ export function ResolutionDialog({
   const unresolving = isChoice
     ? choiceMode === "unresolved"
     : resolution === "unresolved";
+  const voiding = isChoice ? choiceMode === "void" : resolution === "void";
   // `one_of` needs a winner before it can be submitted; `any_of` may resolve
   // with nothing selected (none of the options happened).
   const missingWinner =
-    isChoice && !unresolving && singleWinner && winnerId === null;
+    isChoice && choiceMode === "resolved" && singleWinner && winnerId === null;
 
   const handleSuccess = () => {
     router.refresh();
@@ -106,31 +105,29 @@ export function ResolutionDialog({
   };
 
   const handleSubmit = async () => {
-    if (unresolving) {
-      await unresolvePropAction.execute({ propId: prop.prop_id });
-      return;
+    if (missingWinner) return;
+    const request = resolutionRequest(
+      isChoice
+        ? {
+            propId: prop.prop_id,
+            notes,
+            choice: {
+              mode: choiceMode,
+              outcomes: options.map((option) => ({
+                optionId: option.option_id,
+                outcome: singleWinner
+                  ? option.option_id === winnerId
+                  : checked.has(option.option_id),
+              })),
+            },
+          }
+        : { propId: prop.prop_id, notes, binaryChoice: resolution },
+    );
+    if (request.kind === "unresolve") {
+      await unresolvePropAction.execute(request.args);
+    } else {
+      await resolvePropAction.execute(request.args);
     }
-    if (isChoice) {
-      if (missingWinner) return;
-      await resolvePropAction.execute({
-        propId: prop.prop_id,
-        outcomes: options.map((option) => ({
-          optionId: option.option_id,
-          outcome: singleWinner
-            ? option.option_id === winnerId
-            : checked.has(option.option_id),
-        })),
-        notes: notes.trim() || undefined,
-        overwrite: true,
-      });
-      return;
-    }
-    await resolvePropAction.execute({
-      propId: prop.prop_id,
-      resolution: resolution === "true",
-      notes: notes.trim() || undefined,
-      overwrite: true,
-    });
   };
 
   const handleClose = () => {
@@ -172,6 +169,17 @@ export function ResolutionDialog({
                     />
                     <span className="who">Resolved</span>
                   </label>
+                  <label htmlFor={`${resolutionId}-v`}>
+                    <input
+                      type="radio"
+                      id={`${resolutionId}-v`}
+                      name={`${resolutionId}-mode`}
+                      checked={choiceMode === "void"}
+                      onChange={() => setChoiceMode("void")}
+                      disabled={isLoading}
+                    />
+                    <span className="who">Void</span>
+                  </label>
                   <label htmlFor={`${resolutionId}-u`}>
                     <input
                       type="radio"
@@ -194,8 +202,9 @@ export function ResolutionDialog({
                     [
                       ["true", "True"],
                       ["false", "False"],
+                      ["void", "Void"],
                       ["unresolved", "Unresolved"],
-                    ] as [ResolutionOption, string][]
+                    ] as [BinaryChoice, string][]
                   ).map(([value, label]) => (
                     <label key={value} htmlFor={`${resolutionId}-${value}`}>
                       <input
@@ -276,7 +285,9 @@ export function ResolutionDialog({
               hint={
                 unresolving
                   ? "Removed when the prop is unresolved."
-                  : "How it was settled. Markdown works."
+                  : voiding
+                    ? "Why it was voided. Markdown works."
+                    : "How it was settled. Markdown works."
               }
             >
               <textarea
@@ -305,7 +316,13 @@ export function ResolutionDialog({
               className="submit"
               disabled={isLoading || missingWinner}
             >
-              {isLoading ? "Saving…" : unresolving ? "Unresolve" : "Resolve"}
+              {isLoading
+                ? "Saving…"
+                : unresolving
+                  ? "Unresolve"
+                  : voiding
+                    ? "Void"
+                    : "Resolve"}
               <span className="arrow" aria-hidden="true">
                 →
               </span>

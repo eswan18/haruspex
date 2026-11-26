@@ -111,6 +111,12 @@ export interface ResolutionsTable {
   prop_id: number;
   /** Set for binary props, null for choice props (per-option rows instead). */
   resolution: boolean | null;
+  /**
+   * A void: settled with no outcome, scored for nobody. Never set together
+   * with `resolution` (a CHECK) or with option rows (checked at commit, which
+   * holds for one writer at a time; resolveProp serialises on this row).
+   */
+  voided: Generated<boolean>;
   notes: string | null;
   user_id: number | null;
   updated_at: Generated<Date>;
@@ -267,6 +273,8 @@ export interface VPropsView {
   resolution: boolean | null;
   resolution_user_id: number | null;
   resolution_notes: string | null;
+  /** Null while unresolved; true when the prop was voided. */
+  resolution_voided: boolean | null;
 }
 export type VProp = Selectable<VPropsView>;
 
@@ -329,6 +337,9 @@ export interface VForecastsView {
   resolution_notes: string | null;
   resolution_created_at: Date | null;
   resolution_updated_at: Date | null;
+  /** Null while unresolved; true when the prop was voided. */
+  resolution_voided: boolean | null;
+  /** Null while unresolved, and for a void. */
   score: number | null;
   user_id: number;
   user_name: string;

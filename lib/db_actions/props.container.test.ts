@@ -170,7 +170,7 @@ describe("resolveProp against the database", () => {
   async function storedHeader(propId: number) {
     const row = await testDb
       .selectFrom("resolutions")
-      .select(["id", "resolution", "notes", "user_id"])
+      .select(["id", "resolution", "voided", "notes", "user_id"])
       .where("prop_id", "=", propId)
       .executeTakeFirst();
     // Resolutions written by the action are not tracked by the factory.
@@ -437,6 +437,270 @@ describe("resolveProp against the database", () => {
       expect(await storedHeader(prop.id)).toBeUndefined();
       // The composite foreign key cascades the children away with the header.
       expect(await storedOutcomes(prop.id)).toEqual([]);
+    },
+  );
+
+  ifRunningContainerTestsIt("voids a binary prop", async () => {
+    const admin = await factory.createAdminUser();
+    vi.mocked(getUserFromCookies).mockResolvedValue(admin);
+    const prop = await factory.createProp();
+
+    const result = await resolveProp({
+      propId: prop.id,
+      voided: true,
+      notes: "OpenAI stayed private",
+    });
+
+    expect(result.success).toBe(true);
+    const header = await storedHeader(prop.id);
+    expect(header).toMatchObject({
+      resolution: null,
+      voided: true,
+      notes: "OpenAI stayed private",
+      user_id: admin.id,
+    });
+  });
+
+  ifRunningContainerTestsIt(
+    "voids a resolved one_of prop and clears its outcomes",
+    async () => {
+      const admin = await factory.createAdminUser();
+      vi.mocked(getUserFromCookies).mockResolvedValue(admin);
+      const { prop, options } = await factory.createChoiceProp("one_of", [
+        "Knicks",
+        "Spurs",
+      ]);
+      const first = await resolveProp({
+        propId: prop.id,
+        outcomes: [
+          { optionId: options[0].id, outcome: true },
+          { optionId: options[1].id, outcome: false },
+        ],
+      });
+      expect(first.success).toBe(true);
+      const before = await storedHeader(prop.id);
+
+      const result = await resolveProp({
+        propId: prop.id,
+        voided: true,
+        overwrite: true,
+      });
+
+      expect(result.success).toBe(true);
+      const after = await storedHeader(prop.id);
+      expect(after.id).toBe(before.id);
+      expect(after.voided).toBe(true);
+      expect(after.resolution).toBeNull();
+      expect(await storedOutcomes(prop.id)).toEqual([]);
+    },
+  );
+
+  ifRunningContainerTestsIt(
+    "un-voids a binary prop by overwriting with an answer",
+    async () => {
+      const admin = await factory.createAdminUser();
+      vi.mocked(getUserFromCookies).mockResolvedValue(admin);
+      const prop = await factory.createProp();
+      expect(
+        (await resolveProp({ propId: prop.id, voided: true })).success,
+      ).toBe(true);
+
+      const result = await resolveProp({
+        propId: prop.id,
+        resolution: false,
+        overwrite: true,
+      });
+
+      expect(result.success).toBe(true);
+      expect(await storedHeader(prop.id)).toMatchObject({
+        resolution: false,
+        voided: false,
+      });
+    },
+  );
+
+  ifRunningContainerTestsIt(
+    "un-voids an any_of prop by overwriting with outcomes",
+    async () => {
+      const admin = await factory.createAdminUser();
+      vi.mocked(getUserFromCookies).mockResolvedValue(admin);
+      const { prop, options } = await factory.createChoiceProp("any_of", [
+        "Rain",
+        "Snow",
+      ]);
+      expect(
+        (await resolveProp({ propId: prop.id, voided: true })).success,
+      ).toBe(true);
+
+      const result = await resolveProp({
+        propId: prop.id,
+        outcomes: [
+          { optionId: options[0].id, outcome: true },
+          { optionId: options[1].id, outcome: false },
+        ],
+        overwrite: true,
+      });
+
+      expect(result.success).toBe(true);
+      const header = await storedHeader(prop.id);
+      expect(header.voided).toBe(false);
+      expect(await storedOutcomes(prop.id)).toHaveLength(2);
+    },
+  );
+
+  ifRunningContainerTestsIt(
+    "refuses voided together with a resolution or outcomes",
+    async () => {
+      const admin = await factory.createAdminUser();
+      vi.mocked(getUserFromCookies).mockResolvedValue(admin);
+      const binary = await factory.createProp();
+      const { prop: choice, options } = await factory.createChoiceProp(
+        "one_of",
+        ["A", "B"],
+      );
+
+      const withValue = await resolveProp({
+        propId: binary.id,
+        voided: true,
+        resolution: true,
+      });
+      const withOutcomes = await resolveProp({
+        propId: choice.id,
+        voided: true,
+        outcomes: [
+          { optionId: options[0].id, outcome: true },
+          { optionId: options[1].id, outcome: false },
+        ],
+      });
+
+      for (const result of [withValue, withOutcomes]) {
+        expect(result.success).toBe(false);
+        if (!result.success) expect(result.code).toBe("VALIDATION_ERROR");
+      }
+      expect(await storedHeader(binary.id)).toBeUndefined();
+      expect(await storedHeader(choice.id)).toBeUndefined();
+    },
+  );
+
+  ifRunningContainerTestsIt(
+    "refuses to void an already-resolved prop without overwrite",
+    async () => {
+      const admin = await factory.createAdminUser();
+      vi.mocked(getUserFromCookies).mockResolvedValue(admin);
+      const prop = await factory.createProp();
+      expect(
+        (await resolveProp({ propId: prop.id, resolution: true })).success,
+      ).toBe(true);
+
+      const result = await resolveProp({ propId: prop.id, voided: true });
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error).toContain("already has a resolution");
+      }
+      expect(await storedHeader(prop.id)).toMatchObject({
+        resolution: true,
+        voided: false,
+      });
+    },
+  );
+
+  ifRunningContainerTestsIt(
+    "a void made over an answer drops the answer's notes and names who voided it",
+    async () => {
+      const first = await factory.createAdminUser();
+      const second = await factory.createAdminUser();
+      const prop = await factory.createProp();
+      vi.mocked(getUserFromCookies).mockResolvedValue(first);
+      expect(
+        (
+          await resolveProp({
+            propId: prop.id,
+            resolution: true,
+            notes: "per Reuters",
+          })
+        ).success,
+      ).toBe(true);
+
+      vi.mocked(getUserFromCookies).mockResolvedValue(second);
+      const result = await resolveProp({
+        propId: prop.id,
+        voided: true,
+        overwrite: true,
+      });
+
+      expect(result.success).toBe(true);
+      expect(await storedHeader(prop.id)).toMatchObject({
+        voided: true,
+        notes: null,
+        user_id: second.id,
+      });
+    },
+  );
+
+  ifRunningContainerTestsIt(
+    "an answer made over a void drops the void's reason",
+    async () => {
+      const first = await factory.createAdminUser();
+      const second = await factory.createAdminUser();
+      const prop = await factory.createProp();
+      vi.mocked(getUserFromCookies).mockResolvedValue(first);
+      expect(
+        (
+          await resolveProp({
+            propId: prop.id,
+            voided: true,
+            notes: "condition failed",
+          })
+        ).success,
+      ).toBe(true);
+
+      vi.mocked(getUserFromCookies).mockResolvedValue(second);
+      const result = await resolveProp({
+        propId: prop.id,
+        resolution: false,
+        overwrite: true,
+      });
+
+      expect(result.success).toBe(true);
+      expect(await storedHeader(prop.id)).toMatchObject({
+        voided: false,
+        resolution: false,
+        notes: null,
+        user_id: second.id,
+      });
+    },
+  );
+
+  ifRunningContainerTestsIt(
+    "refuses a voided flag that is not a boolean and leaves the outcomes",
+    async () => {
+      const admin = await factory.createAdminUser();
+      vi.mocked(getUserFromCookies).mockResolvedValue(admin);
+      const { prop, options } = await factory.createChoiceProp("one_of", [
+        "A",
+        "B",
+      ]);
+      const outcomes = [
+        { optionId: options[0].id, outcome: true },
+        { optionId: options[1].id, outcome: false },
+      ];
+      expect((await resolveProp({ propId: prop.id, outcomes })).success).toBe(
+        true,
+      );
+
+      // A server action takes whatever the browser sends. "false" is truthy,
+      // so it would pass as a void here, delete the outcomes, and then be
+      // stored as false: a resolved choice prop with no outcomes.
+      const result = await resolveProp({
+        propId: prop.id,
+        voided: "false" as unknown as boolean,
+        overwrite: true,
+      });
+
+      expect(result.success).toBe(false);
+      if (!result.success) expect(result.code).toBe("VALIDATION_ERROR");
+      expect(await storedOutcomes(prop.id)).toHaveLength(2);
     },
   );
 });

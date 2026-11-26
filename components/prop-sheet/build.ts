@@ -85,3 +85,29 @@ export function toPropWithUserForecast(
         : null,
   };
 }
+
+/**
+ * The line under the scale once the reader can no longer forecast. A void can
+ * close a prop before its deadline, so it gets its own words rather than the
+ * deadline's. `miss` marks the reader who never forecast a prop that counts.
+ */
+export function closedNote(prop: {
+  resolution_voided: boolean | null;
+  user_forecast_id: number | null;
+}): { text: string; miss: boolean } {
+  if (prop.resolution_voided === true) {
+    return {
+      text:
+        prop.user_forecast_id === null
+          ? "This prop was voided, so it takes no forecasts."
+          : "This prop was voided, so your forecast is not scored.",
+      miss: false,
+    };
+  }
+  return prop.user_forecast_id === null
+    ? { text: "You did not forecast this one before the deadline.", miss: true }
+    : {
+        text: "Forecasting is closed. This is the forecast you submitted.",
+        miss: false,
+      };
+}

@@ -50,6 +50,8 @@ export async function resolveProp(args: {
   resolution?: boolean;
   /** Required for choice props, forbidden for yes/no ones. */
   outcomes?: OptionOutcome[];
+  /** Settles the prop with no outcome, instead of a resolution or outcomes. */
+  voided?: boolean;
   notes?: string;
   overwrite?: boolean;
 }): Promise<ServerActionResult<void>> {

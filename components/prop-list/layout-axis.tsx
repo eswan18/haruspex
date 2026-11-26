@@ -439,7 +439,12 @@ export function LayoutAxis({
                         summary row rather than per option. */}
                     {resolved && (
                       <span className="cell-r">
-                        {isChoice ? null : <Penalty value={penaltyOf(prop)} />}
+                        {isChoice ? null : (
+                          <Penalty
+                            value={penaltyOf(prop)}
+                            voided={prop.voided}
+                          />
+                        )}
                       </span>
                     )}
                   </div>
@@ -450,7 +455,7 @@ export function LayoutAxis({
                   <span className="claim mono muted">Prop penalty</span>
                   <span />
                   <span className="cell-r">
-                    <Penalty value={penaltyOf(prop)} />
+                    <Penalty value={penaltyOf(prop)} voided={prop.voided} />
                   </span>
                 </div>
               )}

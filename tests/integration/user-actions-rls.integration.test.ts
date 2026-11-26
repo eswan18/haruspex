@@ -375,6 +375,7 @@ describe("user actions under row-level security", () => {
         expectOk(await resolveProp({ propId, resolution: true }));
         expectOk(await unresolveProp({ propId }));
         expectOk(await resolveProp({ propId, resolution: false }));
+        expectOk(await resolveProp({ propId, voided: true, overwrite: true }));
 
         const resolution = await db
           .selectFrom("resolutions")
@@ -435,6 +436,15 @@ describe("user actions under row-level security", () => {
             ],
           }),
         );
+        // Voiding it clears the outcomes; the database's check that a void
+        // keeps none reads them past RLS.
+        expectOk(await resolveProp({ propId, voided: true, overwrite: true }));
+        const outcomes = await db
+          .selectFrom("resolution_options")
+          .select("option_id")
+          .where("prop_id", "=", propId)
+          .execute();
+        expect(outcomes).toEqual([]);
       },
     );
   });
@@ -907,6 +917,26 @@ describe("user actions under row-level security", () => {
         actAs(member);
 
         const result = await resolveProp({ propId: prop.id, resolution: true });
+
+        expect(result.success).toBe(false);
+        if (!result.success) expect(result.code).toBe("UNAUTHORIZED");
+        expect(await resolutionsFor(prop.id)).toHaveLength(0);
+      },
+    );
+
+    ifRunningContainerTestsIt(
+      "refuses a forecaster voiding a private competition's prop",
+      async () => {
+        const member = await factory.createUser();
+        const comp = await openCompetition(true);
+        await addMember(comp.id, member.id, "forecaster");
+        const prop = await factory.createCompetitionProp(
+          comp.id,
+          privateDeadlines(),
+        );
+        actAs(member);
+
+        const result = await resolveProp({ propId: prop.id, voided: true });
 
         expect(result.success).toBe(false);
         if (!result.success) expect(result.code).toBe("UNAUTHORIZED");

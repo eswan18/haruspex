@@ -53,6 +53,7 @@ This is a Next.js forecasting application inspired by Philip Tetlock's Good Judg
 - **Types**: `/types/db_types.ts` contains all database types and table definitions
 - **Tables**: users, forecasts, props, competitions, categories, resolutions, feature_flags, competition_members (roles: `admin`/`forecaster`), notification_preferences, user_active_days (one row per user per UTC day signed in, written by `lib/active-days.ts` and read by the admin Stats page), plus the choice-prop tables prop_options, forecast_options, resolution_options
 - **Prop kinds**: `props.kind` is `binary` (one yes/no probability, the header row's `forecast`/`resolution`), `one_of`, or `any_of`; the choice kinds leave the header value null and carry a probability/outcome per option in the `*_options` child tables
+- **Voided props**: a prop of any kind can be settled as a void (`resolutions.voided`): no `resolution`, no option outcomes, scored for nobody (`v_forecasts.score` is null). `resolution_id IS NOT NULL` still means "settled"; `resolution_voided` (on `v_props`/`v_forecasts`) and the `"voided"` `PropStatus` tell a void apart. A CHECK, the kind trigger and a deferred constraint trigger keep a value and outcome rows off a void
 - **Views**: Prefixed with `v_` (e.g., `v_forecasts`, `v_props`, `v_prop_options`) for complex queries with joins
 
 ### Server Actions Pattern

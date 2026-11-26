@@ -19,7 +19,7 @@ import { isChoiceKind } from "@/lib/prop-kind";
 import { getPropStatusFromProp, type PropStatus } from "@/lib/prop-status";
 import type { PropWithUserForecast } from "@/types/db_types";
 
-import { summariseField, type FieldEntry } from "./build";
+import { closedNote, summariseField, type FieldEntry } from "./build";
 import { Gauge, PercentField, Scale, Ticks, at, entryCss } from "./entry";
 
 const ownCss = `
@@ -189,6 +189,7 @@ const STATUS_LABEL: Record<PropStatus, string> = {
   "resolved-yes": "Resolved · Yes",
   "resolved-no": "Resolved · No",
   resolved: "Resolved",
+  voided: "Voided",
 };
 
 /**
@@ -548,14 +549,8 @@ export function PropSheet({
             </div>
 
             {!canForecast && (
-              <p
-                className={
-                  prop.user_forecast_id === null ? "note miss" : "note"
-                }
-              >
-                {prop.user_forecast_id === null
-                  ? "You did not forecast this one before the deadline."
-                  : "Forecasting is closed. This is the forecast you submitted."}
+              <p className={closedNote(prop).miss ? "note miss" : "note"}>
+                {closedNote(prop).text}
               </p>
             )}
 
