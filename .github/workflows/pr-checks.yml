@@ -3,6 +3,13 @@ name: PR Checks
 on:
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-checks-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   pr-checks:
     name: PR Checks
@@ -21,9 +28,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Install tsx globally
-        run: npm install -g tsx
-
       - name: Run ESLint
         run: npm run lint
 
@@ -31,7 +35,7 @@ jobs:
         run: npx tsc --noEmit
 
       - name: Run tests with containers
-        run: TEST_USE_CONTAINERS=true npx tsx node_modules/.bin/vitest run
+        run: npm run test:containers
 
       - name: Build application
         run: npm run build
