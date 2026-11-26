@@ -10,6 +10,12 @@ import {
   shouldRunContainerTests,
 } from "../../tests/helpers/testUtils";
 
+// Run the actions as `app_user` (subject to RLS); see the block comment above.
+vi.mock("@/lib/database", async () => {
+  if (process.env.TEST_USE_CONTAINERS !== "true") return { db: null };
+  const { getRlsTestDb } = await import("../../tests/helpers/testDatabase");
+  return { db: await getRlsTestDb() };
+});
 vi.mock("server-only", () => ({}));
 
 vi.mock("@/lib/get-user", () => ({
@@ -150,11 +156,11 @@ describe("addCompetitionMemberById against the database", () => {
 /**
  * The reading and managing actions, against a real PostgreSQL.
  *
- * The code under test reaches the database through `lib/database`, which in
- * container tests connects as the container's superuser (TEST_DATABASE_URL).
- * That role owns the tables and bypasses row-level security, so every
- * allow/deny result below comes from the application code's own checks, not
- * from RLS policies.
+ * `lib/database` is mocked (top of file) to connect as `app_user`, the
+ * non-owner role that row-level security applies to, so each action runs the
+ * way it does in production: allow/deny and visibility results come from the
+ * RLS policies as well as the application code. Rows are seeded and checked
+ * through the owner connection (`getTestDb`), which RLS does not filter.
  */
 describe("competition member roster actions against the database", () => {
   let db: Kysely<Database>;
@@ -275,7 +281,7 @@ describe("competition member roster actions against the database", () => {
     );
 
     ifRunningContainerTestsIt(
-      "SURPRISE: a non-member still receives the roster, emails withheld (app code does not refuse; RLS is not in force on this connection)",
+      "returns an empty roster to a signed-in non-member of a private competition",
       async () => {
         const admin = await factory.createUser();
         const outsider = await factory.createUser();
@@ -285,15 +291,12 @@ describe("competition member roster actions against the database", () => {
 
         const result = await actions.getCompetitionMembers(competition.id);
 
-        expect(result.success).toBe(true);
-        if (!result.success) return;
-        expect(result.data.map((m) => m.user_id)).toEqual([admin.id]);
-        expect(result.data[0].user_email).toBeNull();
+        expect(result).toEqual({ success: true, data: [] });
       },
     );
 
     ifRunningContainerTestsIt(
-      "gives a signed-out caller the roster with emails withheld",
+      "returns an empty roster to a signed-out caller for a private competition",
       async () => {
         const admin = await factory.createUser();
         const competition = await privateCompetition();
@@ -302,10 +305,7 @@ describe("competition member roster actions against the database", () => {
 
         const result = await actions.getCompetitionMembers(competition.id);
 
-        expect(result.success).toBe(true);
-        if (!result.success) return;
-        expect(result.data).toHaveLength(1);
-        expect(result.data[0].user_email).toBeNull();
+        expect(result).toEqual({ success: true, data: [] });
       },
     );
 
@@ -876,20 +876,20 @@ describe("competition member roster actions against the database", () => {
           role: "admin",
         });
 
-        expect(result.success).toBe(true);
-        expect(await roleOf(competition.id, newcomer.id)).toBe("admin");
         const row = await db
           .selectFrom("competition_members")
           .select("id")
           .where("competition_id", "=", competition.id)
           .where("user_id", "=", newcomer.id)
-          .executeTakeFirstOrThrow();
-        getTestTracker().trackId("competition_members", row.id);
+          .executeTakeFirst();
+        if (row) getTestTracker().trackId("competition_members", row.id);
+        expect(result.success).toBe(true);
+        expect(await roleOf(competition.id, newcomer.id)).toBe("admin");
       },
     );
 
     ifRunningContainerTestsIt(
-      "refuses a deactivated or unknown user, and no row is written",
+      "refuses a deactivated user, and no row is written",
       async () => {
         const admin = await factory.createUser();
         const gone = await factory.createUser();
@@ -914,6 +914,29 @@ describe("competition member roster actions against the database", () => {
           code: "NOT_FOUND",
         });
         expect(await roleOf(competition.id, gone.id)).toBeUndefined();
+      },
+    );
+
+    ifRunningContainerTestsIt(
+      "refuses a user id that does not exist, and no row is written",
+      async () => {
+        const admin = await factory.createUser();
+        const competition = await privateCompetition();
+        await join(competition.id, admin.id, "admin");
+        signInAs(admin);
+
+        const result = await actions.addCompetitionMemberById({
+          competitionId: competition.id,
+          userId: 2147483000,
+          role: "forecaster",
+        });
+
+        expect(result).toEqual({
+          success: false,
+          error: "No active user found with that ID",
+          code: "NOT_FOUND",
+        });
+        expect(await roleOf(competition.id, 2147483000)).toBeUndefined();
       },
     );
 

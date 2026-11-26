@@ -10,6 +10,12 @@ import {
   shouldRunContainerTests,
 } from "../../tests/helpers/testUtils";
 
+// Run the actions as `app_user` (subject to RLS); see the block comment below.
+vi.mock("@/lib/database", async () => {
+  if (process.env.TEST_USE_CONTAINERS !== "true") return { db: null };
+  const { getRlsTestDb } = await import("../../tests/helpers/testDatabase");
+  return { db: await getRlsTestDb() };
+});
 vi.mock("server-only", () => ({}));
 
 vi.mock("@/lib/get-user", () => ({
@@ -32,12 +38,11 @@ const DAY = 24 * 60 * 60 * 1000;
 /**
  * The competition actions, against a real PostgreSQL.
  *
- * The code under test reaches the database through `lib/database`, which in
- * container tests connects as the container's superuser (TEST_DATABASE_URL).
- * That role owns the tables and bypasses row-level security, so every
- * allow/deny and visibility result below comes from the application code's
- * own checks, not from RLS policies. In particular, "who can see a private
- * competition" is NOT what these tests pin; that belongs to the RLS tests.
+ * `lib/database` is mocked (top of file) to connect as `app_user`, the
+ * non-owner role that row-level security applies to, so each action runs the
+ * way it does in production: visibility and allow/deny results come from the
+ * RLS policies as well as the application code. Rows are seeded and checked
+ * through the owner connection (`getTestDb`), which RLS does not filter.
  *
  * The test database is shared with other files (and holds seed competitions),
  * so assertions about lists look only at the rows this file created.
@@ -149,7 +154,7 @@ describe("competition actions against the database", () => {
     );
 
     ifRunningContainerTestsIt(
-      "SURPRISE: returns a private competition to a signed-in non-member (app code does not refuse; RLS is not in force on this connection)",
+      "returns NOT_FOUND for a private competition to a signed-in non-member",
       async () => {
         const stranger = await factory.createUser();
         const competition = await privateCompetition();
@@ -157,7 +162,27 @@ describe("competition actions against the database", () => {
 
         const result = await actions.getCompetitionById(competition.id);
 
-        expect(result).toEqual({ success: true, data: competition });
+        expect(result).toEqual({
+          success: false,
+          error: "Competition not found",
+          code: "NOT_FOUND",
+        });
+      },
+    );
+
+    ifRunningContainerTestsIt(
+      "returns NOT_FOUND for a private competition to a signed-out caller",
+      async () => {
+        const competition = await privateCompetition();
+        vi.mocked(getUserFromCookies).mockResolvedValue(null as never);
+
+        const result = await actions.getCompetitionById(competition.id);
+
+        expect(result).toEqual({
+          success: false,
+          error: "Competition not found",
+          code: "NOT_FOUND",
+        });
       },
     );
 
@@ -247,19 +272,36 @@ describe("competition actions against the database", () => {
     );
 
     ifRunningContainerTestsIt(
-      "SURPRISE: lists a private competition to a non-member (app code does not filter; RLS is not in force on this connection)",
+      "omits a private competition from a non-member's list, and lists it for a member",
       async () => {
         const stranger = await factory.createUser();
+        const member = await factory.createUser();
         const privateComp = await privateCompetition();
+        await addMember(privateComp.id, member.id, "forecaster");
+
         vi.mocked(getUserFromCookies).mockResolvedValue(stranger as never);
+        const asStranger = await actions.getCompetitions();
+        vi.mocked(getUserFromCookies).mockResolvedValue(member as never);
+        const asMember = await actions.getCompetitions();
+
+        expect(asStranger.success && asMember.success).toBe(true);
+        if (!asStranger.success || !asMember.success) return;
+        expect(asStranger.data.map((c) => c.id)).not.toContain(privateComp.id);
+        expect(asMember.data.map((c) => c.id)).toContain(privateComp.id);
+      },
+    );
+
+    ifRunningContainerTestsIt(
+      "omits a private competition from a signed-out caller's list",
+      async () => {
+        const privateComp = await privateCompetition();
+        vi.mocked(getUserFromCookies).mockResolvedValue(null as never);
 
         const result = await actions.getCompetitions();
 
         expect(result.success).toBe(true);
         if (!result.success) return;
-        expect(result.data.find((c) => c.id === privateComp.id)).toMatchObject(
-          { role: null, can_add_props: false },
-        );
+        expect(result.data.map((c) => c.id)).not.toContain(privateComp.id);
       },
     );
 
@@ -382,6 +424,7 @@ describe("competition actions against the database", () => {
         });
 
         const row = await createdCompetition(name);
+        const members = await membersOf(row!.id);
         expect(result).toEqual({ success: true, data: undefined });
         expect(row).toMatchObject({
           name,
@@ -391,7 +434,7 @@ describe("competition actions against the database", () => {
           end_date: end,
           created_by_user_id: admin.id,
         });
-        expect(await membersOf(row!.id)).toEqual([]);
+        expect(members).toEqual([]);
         expect(revalidatePath).toHaveBeenCalledWith("/competitions");
         expect(revalidatePath).toHaveBeenCalledWith("/admin/competitions");
       },
@@ -415,6 +458,7 @@ describe("competition actions against the database", () => {
         });
 
         const row = await createdCompetition(name);
+        const members = await membersOf(row!.id);
         expect(result).toEqual({ success: true, data: undefined });
         expect(row).toMatchObject({
           name,
@@ -424,7 +468,7 @@ describe("competition actions against the database", () => {
           end_date: null,
           created_by_user_id: admin.id,
         });
-        expect(await membersOf(row!.id)).toEqual([
+        expect(members).toEqual([
           { id: expect.any(Number), user_id: admin.id, role: "admin" },
         ]);
       },
