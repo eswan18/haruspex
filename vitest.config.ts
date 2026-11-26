@@ -28,6 +28,8 @@ export default defineConfig({
       "**/dist/**",
       "**/.next/**",
       "**/stories/**",
+      // Playwright's smoke suite, run by `npm run test:e2e`.
+      "**/e2e/**",
       // Git worktrees live here and are full second checkouts of this repo,
       // so every test file in them would be collected twice.
       "**/.claude/worktrees/**",
