@@ -24,6 +24,37 @@ spec:
           operator: Equal
           value: "true"
           effect: NoSchedule
+      # Brings the database to this build's schema before the app starts, so a
+      # deploy needs no manual migration. Runs the runner compiled into the
+      # image (see the README's "Applying migrations from inside the image"):
+      # exit 0 only when every migration applied and the startup check then
+      # passes, so a failed migration holds this pod in Init while the old
+      # pods keep serving.
+      #
+      # Same image as the app container, so a build only ever applies its own
+      # migrations; the image line must stay byte-identical to the app's for
+      # ArgoCD's kustomize override to replace both. It connects as the
+      # database owner (the app runs as app_user), and that credential lives on
+      # its own volume, `migrate-secrets`, which only this container mounts.
+      initContainers:
+        - name: migrate
+          image: us-central1-docker.pkg.dev/ethans-services/containers/haruspex:override-required
+          command: ["node", "/app/migrate/index.js"]
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "5m"
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1001
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: migrate-secrets
+              mountPath: "/mnt/migrate"
+              readOnly: true
       containers:
         - name: haruspex
           # A tag that deliberately does not exist, and must never be
@@ -73,6 +104,10 @@ spec:
               readOnly: true
       volumes:
         - name: secrets-store
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+        - name: migrate-secrets
           csi:
             driver: secrets-store.csi.k8s.io
             readOnly: true

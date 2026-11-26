@@ -7,6 +7,14 @@ spec:
   template:
     spec:
       serviceAccountName: haruspex-prod-ksa
+      initContainers:
+        - name: migrate
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: haruspex-prod-migrate-secrets
+                  key: DATABASE_URL
       containers:
         - name: haruspex
           envFrom:
@@ -47,3 +55,9 @@ spec:
             readOnly: true
             volumeAttributes:
               secretProviderClass: haruspex-prod-secrets
+        - name: migrate-secrets
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: haruspex-prod-migrate-secrets

@@ -87,7 +87,8 @@
     "tailwindcss": "^4.3.5",
     "testcontainers": "^12.2.2",
     "typescript": "^6.0.3",
-    "vitest": "^5.1.1"
+    "vitest": "^5.1.1",
+    "yaml": "^2.9.1"
   },
   "overrides": {
     "esbuild": "$esbuild",
