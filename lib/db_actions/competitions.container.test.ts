@@ -834,7 +834,7 @@ describe("competition actions against the database", () => {
     );
 
     ifRunningContainerTestsIt(
-      "silently ignores is_private in the input: the rest is applied and the flag stays",
+      "SURPRISE: silently ignores is_private in the input: the rest is applied and the flag stays",
       async () => {
         const admin = await factory.createUser({ is_admin: true });
         const competition = await factory.createCompetition();

@@ -304,6 +304,8 @@ describe("GET /oauth/callback", () => {
 
       expectRedirectWithoutSession(res, "/login?error=Account+is+deactivated");
       expect(jar.set).not.toHaveBeenCalled();
+      // The redirect returns before the oauth cookies are cleared.
+      expect(jar.delete).not.toHaveBeenCalled();
       // Pinned: the handler still syncs a deactivated user's profile before the check.
       expect(users.syncUserFromIdp).toHaveBeenCalledWith(42, expect.any(Object));
     });

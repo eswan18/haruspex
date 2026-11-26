@@ -10,7 +10,8 @@ import {
   shouldRunContainerTests,
 } from "../../tests/helpers/testUtils";
 
-// Run the actions as `app_user` (subject to RLS); see the block comment above.
+// Run the actions as `app_user` (subject to RLS); see the block comment on the
+// roster tests below.
 vi.mock("@/lib/database", async () => {
   if (process.env.TEST_USE_CONTAINERS !== "true") return { db: null };
   const { getRlsTestDb } = await import("../../tests/helpers/testDatabase");
