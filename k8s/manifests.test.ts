@@ -15,7 +15,6 @@ const K8S = path.join(process.cwd(), "k8s");
 const ENVS = ["staging", "prod"] as const;
 const RUNNER = ["node", "/app/migrate/index.js"];
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- parsed YAML
 type Doc = any;
 
 const load = (...parts: string[]): Doc =>
