@@ -1137,6 +1137,7 @@ describe("Props Unit Tests", () => {
       expect(recorded.insertedHeader).toEqual({
         prop_id: 1,
         resolution: true,
+        voided: false,
         user_id: 2,
         notes: undefined,
       });
@@ -1182,6 +1183,7 @@ describe("Props Unit Tests", () => {
       expect(trx.updateTable).toHaveBeenCalledWith("resolutions");
       expect(recorded.updatedHeader).toEqual({
         resolution: false,
+        voided: false,
         notes: undefined,
       });
       expect(recorded.insertedOptions).toBeUndefined();
@@ -1321,6 +1323,7 @@ describe("Props Unit Tests", () => {
       expect(recorded.insertedHeader).toEqual({
         prop_id: 1,
         resolution: null,
+        voided: false,
         user_id: 2,
         notes: "Neither happened",
       });
@@ -1351,6 +1354,7 @@ describe("Props Unit Tests", () => {
       expect(result.success).toBe(true);
       expect(recorded.updatedHeader).toEqual({
         resolution: null,
+        voided: false,
         notes: "Corrected",
       });
       expect(recorded.deletedResolutionId).toBe(7);
