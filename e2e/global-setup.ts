@@ -29,7 +29,7 @@ import {
   trackStub,
 } from "./support/harness";
 import { AUDIENCE, startIdpStub, type IdpStub } from "./support/idp-stub";
-import { seed, type TestUser } from "./support/seed";
+import { seed, type Seed, type TestUser } from "./support/seed";
 
 /**
  * What the app's process inherits from this one. Nothing else: a developer's
@@ -65,12 +65,14 @@ function appEnv(databaseUrl: string, idpUrl: string): NodeJS.ProcessEnv {
   };
 }
 
+/** Signs `who` in; returns the session token it wrote. */
 async function writeStorageState(
   file: string,
   stub: IdpStub,
   who: TestUser,
-): Promise<void> {
-  if (!who.idp_user_id) throw new Error(`Seeded user ${who.id} has no idp_user_id`);
+): Promise<string> {
+  if (!who.idp_user_id)
+    throw new Error(`Seeded user ${who.id} has no idp_user_id`);
   const token = await stub.mintToken({
     sub: who.idp_user_id,
     email: who.email,
@@ -92,6 +94,7 @@ async function writeStorageState(
     origins: [],
   };
   fs.writeFileSync(file, JSON.stringify(state, null, 2));
+  return token;
 }
 
 export default async function globalSetup(): Promise<void> {
@@ -118,6 +121,8 @@ export default async function globalSetup(): Promise<void> {
       pool: new Pool({ connectionString: ownerUrl, max: 2, ssl: false }),
     }),
   });
+  let data: Seed;
+  let readerToken: string;
   try {
     // tests/helpers/migrator.ts records its baseline schema as a migration,
     // "00000000_bootstrap". The app's boot check (lib/migrations/check.ts)
@@ -127,9 +132,9 @@ export default async function globalSetup(): Promise<void> {
     await sql`delete from kysely_migration where name = '00000000_bootstrap'`.execute(
       db,
     );
-    const data = await seed(db);
+    data = await seed(db);
     fs.writeFileSync(STATE.seed, JSON.stringify(data, null, 2));
-    await writeStorageState(STATE.user, stub, data.user);
+    readerToken = await writeStorageState(STATE.user, stub, data.user);
     await writeStorageState(STATE.admin, stub, data.admin);
     // Only this process holds the stub's signing key, so the token a spec
     // needs for the wrong-audience check is minted here.
@@ -146,6 +151,15 @@ export default async function globalSetup(): Promise<void> {
   }
 
   // app_user owns nothing, so row-level security applies to the app as it
-  // does in production, where the app's role is not the owner either.
-  await startApp(appEnv(appUserUrl, stub.url));
+  // does in production, where the app's role is not the owner either. The
+  // reader's token is how readiness tells this run's app from any other
+  // server on the port (see startApp).
+  await startApp(appEnv(appUserUrl, stub.url), {
+    token: readerToken,
+    user: {
+      id: data.user.id,
+      idp_user_id: data.user.idp_user_id!,
+      email: data.user.email,
+    },
+  });
 }

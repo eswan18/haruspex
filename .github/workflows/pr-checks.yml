@@ -63,14 +63,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # The e2e harness shells out to lsof and ps to prove the listening server
-      # is the process it spawned.
-      - name: Ensure lsof and ps are available
-        run: |
-          command -v ps >/dev/null || { echo "ps is missing" >&2; exit 1; }
-          command -v lsof >/dev/null || { sudo apt-get update && sudo apt-get install -y lsof; }
-          command -v lsof && command -v ps
-
       - name: Get Playwright version
         id: playwright-version
         run: echo "version=$(npx playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"

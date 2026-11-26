@@ -225,22 +225,13 @@ export async function assertPortFree(port: number): Promise<void> {
   );
   if (!answers.some(Boolean)) return;
 
-  let holder = "";
-  try {
-    holder = execFileSync("lsof", ["-nP", `-iTCP:${port}`, "-sTCP:LISTEN"], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    });
-  } catch {
-    // lsof is only here to name the culprit.
-  }
   throw new Error(
     `Port ${port} is already in use; stop whatever is listening on it and re-run` +
-      ` (or pick other ports with E2E_APP_PORT / E2E_IDP_PORT).\n${holder}`,
+      ` (or pick other ports with E2E_APP_PORT / E2E_IDP_PORT).\n${describeListeners(port)}`,
   );
 }
 
-/** A command's whole outcome, kept so a readiness failure can show it. */
+/** A command's whole outcome, for a failure report. */
 interface Ran {
   command: string;
   status: number | null;
@@ -273,31 +264,14 @@ function describeRun(ran: Ran): string {
 }
 
 /**
- * The pids with a listening TCP socket on `port`: bound to `host` only, when
- * given, otherwise on any address. Only processes this user may inspect are
- * visible, which is why the checks that use this never rest on it alone.
+ * Who is listening on `port`, as the OS's own tool reports it. Only ever
+ * printed, to help a human: nothing is decided on it. lsof on GitHub's
+ * ubuntu runner does not list the app's socket at all (see startApp).
  */
-function listenersOn(
-  port: number,
-  host?: string,
-): { pids: number[]; ran: Ran } {
-  const spec = host ? `-iTCP@${host}:${port}` : `-iTCP:${port}`;
-  const ran = run("lsof", ["-nP", spec, "-sTCP:LISTEN", "-t"]);
-  if (ran.error?.startsWith("ENOENT")) {
-    throw new Error(
-      "lsof is needed to prove the server on the app port is the one this run started",
-    );
-  }
-  if (ran.status !== 0) return { pids: [], ran }; // lsof exits 1 when nothing matches
-  const pids = [...new Set(ran.stdout.split("\n").filter(Boolean).map(Number))];
-  return { pids, ran };
-}
-
-function processGroupOf(pid: number): { pgid: number | null; ran: Ran } {
-  const ran = run("ps", ["-o", "pgid=", "-p", String(pid)]);
-  if (ran.status !== 0) return { pgid: null, ran }; // no such process
-  const out = ran.stdout.trim();
-  return { pgid: out ? Number(out) : null, ran };
+function describeListeners(port: number): string {
+  return process.platform === "linux"
+    ? describeRun(run("ss", ["-ltnp", `sport = :${port}`]))
+    : describeRun(run("lsof", ["-nP", `-iTCP:${port}`, "-sTCP:LISTEN"]));
 }
 
 // --- the app ---------------------------------------------------------------
@@ -336,15 +310,55 @@ let app: {
   log: fs.WriteStream;
 } | null = null;
 
-const HEALTH_TIMEOUT_MS = 60_000;
+const READY_TIMEOUT_MS = 60_000;
+
+/** How much of the app's output a failure prints. */
+const APP_LOG_TAIL_CHARS = 8_000;
+
+/**
+ * A question only this run's app can answer. `token` is signed with the key
+ * the IdP stub generated for this run, for `user`, whose `idp_user_id` is a
+ * random UUID that exists only in this run's database.
+ */
+export interface Fingerprint {
+  token: string;
+  user: { id: number; idp_user_id: string; email: string };
+}
 
 /**
  * Starts the standalone server (`node server.js`, as production does) on
  * `LOOPBACK`:`APP_PORT` with exactly `env`, and resolves once it is proven to
  * be the server answering there. Its stdout and stderr go to
  * `test-results/app.log`.
+ *
+ * Why a server this run did not start cannot pass for it:
+ *
+ * 1. Global setup has already found nothing answering on the port at
+ *    `LOOPBACK` or at [::1] (`assertPortFree`), before the database, the stub
+ *    or the app existed.
+ * 2. The app is asked `GET /api/me` at `LOOPBACK`:`APP_PORT` with
+ *    `fingerprint.token` as its session cookie, and must answer with
+ *    `fingerprint.user`. To do that a server has to trust this run's signing
+ *    key (it fetches it from `IDP_BASE_URL`), and then find the token's
+ *    subject, a UUID made for this run, in its database. That database is a
+ *    fresh container whose address and credentials only the child was given.
+ *    A stale e2e server, a dev server or anything else on the port cannot
+ *    know that user, so it fails this check whatever it answers.
+ * 3. After that, nothing may answer at [::1]:`APP_PORT`. The browser goes to
+ *    `localhost`, which can resolve to ::1, where the app does not listen; so
+ *    the address the answer in 2 came from is the only one it can reach.
+ * 4. The child must still be running. With `allowRetry: false`, standalone
+ *    `server.js` exits on EADDRINUSE, so a child that lost the address to
+ *    something else stops, and the run fails rather than waiting.
+ *
+ * This replaces asking lsof which process owns the listening socket: on
+ * GitHub's ubuntu runner lsof listed no socket for the app at all, although
+ * it was listening and healthy, so readiness never held there.
  */
-export async function startApp(env: NodeJS.ProcessEnv): Promise<void> {
+export async function startApp(
+  env: NodeJS.ProcessEnv,
+  fingerprint: Fingerprint,
+): Promise<void> {
   const server = prepareStandaloneServer();
   fs.mkdirSync(path.dirname(APP_LOG), { recursive: true });
   const log = fs.createWriteStream(APP_LOG);
@@ -356,8 +370,7 @@ export async function startApp(env: NodeJS.ProcessEnv): Promise<void> {
     output = (output + chunk.toString()).slice(-APP_LOG_TAIL_CHARS);
   };
 
-  // Its own process group: teardown stops the group, and readiness asks
-  // whether a listening socket belongs to it.
+  // Its own process group, which teardown stops as a whole.
   const child = spawn(process.execPath, [server], {
     cwd: STANDALONE,
     env: { ...env, PORT: String(APP_PORT), HOSTNAME: LOOPBACK },
@@ -384,129 +397,71 @@ export async function startApp(env: NodeJS.ProcessEnv): Promise<void> {
     JSON.stringify({ runner: refTo(process.pid), app: refTo(child.pid) }),
   );
 
-  const pgid = child.pid;
   const outcome: { stopped?: string } = {};
   void exited.then((how) => (outcome.stopped = how));
 
-  // What the readiness loop last saw, and how often each condition held, so a
-  // failure says which one never did.
-  const seen = {
-    polls: 0,
-    listenerSeen: 0,
-    listenerOwned: 0,
-    healthAsked: 0,
-    last: null as Ownership | null,
-    lastHealth: "never asked",
-  };
+  // What the readiness loop last saw, so a failure says which condition
+  // never held.
+  const seen = { polls: 0, health: "never asked", identity: "never asked" };
   const fail = async (message: string): Promise<never> => {
-    const report = [
-      `--- readiness: ${seen.polls} polls; lsof saw a listener on ${LOOPBACK}:${APP_PORT} in ${seen.listenerSeen}, all of it in the app's process group (${pgid}) in ${seen.listenerOwned}; /api/health asked ${seen.healthAsked} times, last: ${seen.lastHealth}`,
-      `--- the app process: ${outcome.stopped ?? "still running"}`,
-    ];
-    if (seen.last) {
-      report.push(`--- last ownership check`, describeRun(seen.last.lsof.ran));
-      for (const ps of seen.last.groups) report.push(describeRun(ps.ran));
-    }
-    // Asked only now, and only to explain the failure: neither answer counts
-    // towards readiness.
-    report.push(
-      `--- /api/health at ${LOOPBACK}:${APP_PORT}, ownership aside: ${await probeHealth()}`,
-      `--- every listener on port ${APP_PORT}`,
-      describeRun(run("lsof", ["-nP", `-iTCP:${APP_PORT}`, "-sTCP:LISTEN"])),
+    console.error(
+      [
+        `--- readiness after ${seen.polls} polls: /api/health last answered ${seen.health}; /api/me with this run's token last answered ${seen.identity}`,
+        `--- the app process (pid ${child.pid}): ${outcome.stopped ?? "still running"}`,
+        `--- listeners on port ${APP_PORT}`,
+        describeListeners(APP_PORT),
+        `--- tail of the app log (${APP_LOG}) ---`,
+        output || "(empty)",
+        `--- end of the app log ---`,
+      ].join("\n"),
     );
-    if (process.platform === "linux") {
-      report.push(describeRun(run("ss", ["-ltnp", `sport = :${APP_PORT}`])));
-    }
-    report.push(
-      `--- tail of the app log (${APP_LOG}) ---`,
-      output || "(empty)",
-      `--- end of the app log ---`,
-    );
-    console.error(report.join("\n"));
     throw new Error(message);
   };
-  // Every socket listening on exactly LOOPBACK:APP_PORT is the child's. The
-  // server does not set SO_REUSEPORT, so while it holds that address no other
-  // socket can, and a connection to it reaches this socket ahead of any
-  // wildcard listener. Whoever took the address first wins it outright: if
-  // that is not the child, its listen fails with EADDRINUSE and it exits.
-  const checkOwnership = (): Ownership => {
-    const lsof = listenersOn(APP_PORT, LOOPBACK);
-    const groups = lsof.pids.map((pid) => processGroupOf(pid));
-    return {
-      lsof,
-      groups,
-      owned:
-        lsof.pids.length > 0 && groups.every((group) => group.pgid === pgid),
-    };
-  };
 
-  // Ready: the child is proven to hold the address first, and only then is
-  // /api/health asked, at that address, so the 200 can only be the child's.
-  const deadline = Date.now() + HEALTH_TIMEOUT_MS;
+  const deadline = Date.now() + READY_TIMEOUT_MS;
   for (;;) {
     if (outcome.stopped) {
-      await fail(
-        `The app ${outcome.stopped} before it was healthy (condition never reached: the app process stayed alive)`,
-      );
+      await fail(`The app ${outcome.stopped} before it was ready`);
     }
     if (Date.now() > deadline) {
-      const condition =
-        seen.listenerSeen === 0
-          ? `lsof never saw a listener on ${LOOPBACK}:${APP_PORT}`
-          : seen.listenerOwned === 0
-            ? `the listener lsof saw on ${LOOPBACK}:${APP_PORT} was never all in the app's process group (${pgid})`
-            : `/api/health never answered 200 (last: ${seen.lastHealth})`;
       await fail(
-        `The app was not proven ready within ${HEALTH_TIMEOUT_MS / 1000}s: ${condition}`,
+        `The app was not proven ready within ${READY_TIMEOUT_MS / 1000}s: ` +
+          (seen.health !== "200"
+            ? `http://${LOOPBACK}:${APP_PORT}/api/health never answered 200 (last: ${seen.health})`
+            : `http://${LOOPBACK}:${APP_PORT}/api/me never answered with this run's seeded user (last: ${seen.identity})`),
       );
     }
     seen.polls++;
-    const ownership = checkOwnership();
-    seen.last = ownership;
-    if (ownership.lsof.pids.length > 0) seen.listenerSeen++;
-    if (ownership.owned) {
-      seen.listenerOwned++;
-      seen.healthAsked++;
-      seen.lastHealth = await probeHealth();
-      if (seen.lastHealth === "200") break;
+    seen.health = await askHealth();
+    if (seen.health === "200") {
+      seen.identity = await askWhoAmI(fingerprint);
+      if (seen.identity === "this run's user") break;
+      // Given this token, this run's app answers with its user or, while it
+      // cannot yet verify the token, with null. Any other answer is another
+      // server, and waiting will not change that.
+      if (seen.identity.startsWith("another user")) {
+        await fail(
+          `Something besides this run's app answered http://${LOOPBACK}:${APP_PORT}/api/me: ${seen.identity}`,
+        );
+      }
     }
     await delay(250);
   }
 
-  // And at that moment, nothing else can be reached as localhost:APP_PORT: no
-  // listener of any user on ::1 (the app listens only on LOOPBACK, so anything
-  // answering there is someone else), and no listener this user can see on
-  // any address outside the child's process group.
-  const others = listenersOn(APP_PORT).pids.filter(
-    (pid) => processGroupOf(pid).pgid !== pgid,
-  );
-  if (others.length > 0) {
-    await fail(
-      `Something besides the app is listening on port ${APP_PORT} (pid ${others.join(", ")})`,
-    );
-  }
   if (await acceptsConnections(APP_PORT, "::1")) {
     await fail(`Something besides the app is listening on [::1]:${APP_PORT}`);
   }
-  if (outcome.stopped || !checkOwnership().owned) {
-    await fail(
-      `The app ${outcome.stopped ?? "lost its socket"} while starting`,
-    );
-  }
+  if (outcome.stopped) await fail(`The app ${outcome.stopped} while starting`);
 }
 
-interface Ownership {
-  lsof: { pids: number[]; ran: Ran };
-  groups: { pgid: number | null; ran: Ran }[];
-  owned: boolean;
+/** Why a request got no answer, for a failure report. */
+function noAnswer(error: unknown): string {
+  const cause = (error as { cause?: { code?: string } }).cause?.code;
+  return `no answer (${(error as Error).message}${cause ? `: ${cause}` : ""})`;
 }
-
-/** How much of the app's output a failure prints. */
-const APP_LOG_TAIL_CHARS = 8_000;
 
 /** "200", another status, or why there was no answer. */
-async function probeHealth(): Promise<string> {
+async function askHealth(): Promise<string> {
   try {
     const response = await fetch(`http://${LOOPBACK}:${APP_PORT}/api/health`, {
       signal: AbortSignal.timeout(2_000),
@@ -514,8 +469,37 @@ async function probeHealth(): Promise<string> {
     await response.body?.cancel();
     return String(response.status);
   } catch (error) {
-    const cause = (error as { cause?: { code?: string } }).cause?.code;
-    return `no answer (${(error as Error).message}${cause ? `: ${cause}` : ""})`;
+    return noAnswer(error);
+  }
+}
+
+/** "this run's user", or what the server answered instead. */
+async function askWhoAmI({ token, user }: Fingerprint): Promise<string> {
+  try {
+    const response = await fetch(`http://${LOOPBACK}:${APP_PORT}/api/me`, {
+      headers: { cookie: `token=${token}` },
+      signal: AbortSignal.timeout(5_000),
+    });
+    const body = await response.text();
+    if (response.status !== 200) return `status ${response.status}`;
+    let me: Partial<Fingerprint["user"]> | null;
+    try {
+      me = JSON.parse(body) as Partial<Fingerprint["user"]> | null;
+    } catch {
+      return `a body that is not JSON: ${JSON.stringify(body.slice(0, 200))}`;
+    }
+    if (
+      me?.id === user.id &&
+      me.idp_user_id === user.idp_user_id &&
+      me.email === user.email
+    ) {
+      return "this run's user";
+    }
+    return me
+      ? `another user: ${JSON.stringify({ id: me.id, idp_user_id: me.idp_user_id, email: me.email })}`
+      : "null (the token was refused)";
+  } catch (error) {
+    return noAnswer(error);
   }
 }
 
