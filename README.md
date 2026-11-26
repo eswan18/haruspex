@@ -350,7 +350,10 @@ manual step:
   Neon's **direct** host, not the `-pooler` one. kysely holds a session-level advisory lock for the
   whole run (that is what lets two pods start at once and apply each migration once), and PgBouncer in
   transaction mode does not keep session locks. That credential has its own SecretProviderClass and
-  volume, mounted only by the initContainer, so the app container never holds it.
+  volume, mounted only by the initContainer, so it is never in the app container's environment or
+  files. That is not a hard boundary: a pod has one service account, and the CSI driver fetches the
+  secret with it, so code running in the app container could still ask Secret Manager for it.
+  Separating it fully would take a migration Job with its own service account.
 - **A failed migration** leaves the new pod in `Init` while the old pods keep serving (the rolling
   update never takes a pod down first at these replica counts). `kubectl logs <pod> -c migrate` shows
   what failed; the database is left at the last migration that succeeded.
