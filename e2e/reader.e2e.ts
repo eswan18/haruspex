@@ -95,7 +95,9 @@ test.describe("reader", () => {
   test("/help renders", async ({ page }) => {
     await page.goto("/help");
     await expect(page).toHaveURL(/\/help$/);
-    await expect(page.getByRole("heading").first()).toBeVisible();
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Help" }),
+    ).toBeVisible();
   });
 
   test("/admin refuses a non-admin with a No access page", async ({ page }) => {

@@ -28,6 +28,7 @@ This is a Next.js forecasting application inspired by Philip Tetlock's Good Judg
 - `npm run test:coverage` - Run tests with coverage report
 - `npm run storybook` - Start Storybook development server
 - `npm run build-storybook` - Build Storybook
+- `npm run test:e2e` - Playwright smoke suite against the production build (requires Docker and a prior `npm run build`)
 
 **Testing Setup:**
 
@@ -37,7 +38,8 @@ This is a Next.js forecasting application inspired by Philip Tetlock's Good Judg
 - Test files: `**/*.{test,spec}.{ts,tsx}`
 - Coverage provided by V8 with HTML/JSON/text reports
 - UI components tested in Storybook (excluded from coverage)
-- Existing test files cover auth, database actions, server utilities
+- Existing test files sit beside the code they cover (`lib/`, `lib/db_actions/`, `app/`, `components/`) plus container-backed tests in `tests/integration/`
+- **Browser smoke suite (`e2e/`)**: `npm run test:e2e` needs Docker (Testcontainers Postgres) and a prior `npm run build`, which itself needs `DATABASE_URL`, `IDP_BASE_URL` and `IDP_PUBLIC_URL` set to any dummy values, as CI does. It runs the standalone server as production does and signs in through a stub IdP, with no app-side auth bypass. Ports default to 3100/3101; override with `E2E_APP_PORT` / `E2E_IDP_PORT`. Add browser checks here only for flows that cross layers; detailed behaviour stays in the vitest suites.
 
 ### Database Migrations
 

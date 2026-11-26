@@ -17,6 +17,9 @@ export default defineConfig({
   workers: 1,
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
+  // The forecast and resolve checks mutate seeded data once per run, so a retry
+  // would run against already-changed data and fail for the wrong reason.
+  retries: 0,
   reporter: "list",
   use: {
     baseURL: APP_URL,
