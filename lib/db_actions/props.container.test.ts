@@ -501,9 +501,9 @@ describe("resolveProp against the database", () => {
       const admin = await factory.createAdminUser();
       vi.mocked(getUserFromCookies).mockResolvedValue(admin);
       const prop = await factory.createProp();
-      expect((await resolveProp({ propId: prop.id, voided: true })).success).toBe(
-        true,
-      );
+      expect(
+        (await resolveProp({ propId: prop.id, voided: true })).success,
+      ).toBe(true);
 
       const result = await resolveProp({
         propId: prop.id,
@@ -528,9 +528,9 @@ describe("resolveProp against the database", () => {
         "Rain",
         "Snow",
       ]);
-      expect((await resolveProp({ propId: prop.id, voided: true })).success).toBe(
-        true,
-      );
+      expect(
+        (await resolveProp({ propId: prop.id, voided: true })).success,
+      ).toBe(true);
 
       const result = await resolveProp({
         propId: prop.id,

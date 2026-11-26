@@ -96,7 +96,9 @@ export async function down(db: Kysely<any>): Promise<void> {
     db,
   );
   await sql`DROP TRIGGER enforce_voided_no_outcomes ON resolutions`.execute(db);
-  await sql`DROP FUNCTION check_voided_resolution_has_no_outcomes()`.execute(db);
+  await sql`DROP FUNCTION check_voided_resolution_has_no_outcomes()`.execute(
+    db,
+  );
 
   // Verbatim from 1788220800000.
   await sql`

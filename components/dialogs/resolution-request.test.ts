@@ -12,7 +12,11 @@ describe("resolution dialog state", () => {
     resolution: null,
     resolution_voided: null,
   };
-  const voided = { resolution_id: 3, resolution: null, resolution_voided: true };
+  const voided = {
+    resolution_id: 3,
+    resolution: null,
+    resolution_voided: true,
+  };
 
   it("starts a voided prop on Void, for both kinds", () => {
     expect(initialBinaryChoice(voided)).toBe("void");
