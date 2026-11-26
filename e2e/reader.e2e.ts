@@ -66,7 +66,9 @@ test.describe("reader", () => {
       .getByRole("textbox", { name: "Your forecast, percent" })
       .press("Enter");
     await page.getByRole("button", { name: "Save" }).click();
-    await expect(page.getByText("Forecast recorded", { exact: true })).toBeVisible();
+    await expect(
+      page.getByText("Forecast recorded", { exact: true }),
+    ).toBeVisible();
 
     await page.reload();
     await expect(page.getByRole("button", { name: "70%" })).toBeVisible();
