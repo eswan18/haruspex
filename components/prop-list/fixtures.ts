@@ -17,6 +17,7 @@ export const unresolvedFixture: PropView[] = [
     outcome: null,
     options: [],
     resolved: false,
+    voided: false,
     closedAt: day(-12),
   },
   {
@@ -29,6 +30,7 @@ export const unresolvedFixture: PropView[] = [
     outcome: null,
     options: [],
     resolved: false,
+    voided: false,
     closedAt: day(-12),
   },
   {
@@ -63,6 +65,7 @@ export const unresolvedFixture: PropView[] = [
       },
     ],
     resolved: false,
+    voided: false,
     closedAt: day(-30),
   },
   {
@@ -97,6 +100,7 @@ export const unresolvedFixture: PropView[] = [
       },
     ],
     resolved: false,
+    voided: false,
     closedAt: day(-30),
   },
   {
@@ -109,6 +113,7 @@ export const unresolvedFixture: PropView[] = [
     outcome: null,
     options: [],
     resolved: false,
+    voided: false,
     closedAt: day(-2),
   },
 ];
@@ -128,6 +133,7 @@ export const resolvedFixture: PropView[] = [
     outcome: false,
     options: [],
     resolved: true,
+    voided: false,
     closedAt: day(-140),
   },
   {
@@ -140,6 +146,7 @@ export const resolvedFixture: PropView[] = [
     outcome: false,
     options: [],
     resolved: true,
+    voided: false,
     closedAt: day(-90),
   },
   {
@@ -152,6 +159,7 @@ export const resolvedFixture: PropView[] = [
     outcome: false,
     options: [],
     resolved: true,
+    voided: false,
     closedAt: day(-60),
   },
   {
@@ -164,6 +172,7 @@ export const resolvedFixture: PropView[] = [
     outcome: true,
     options: [],
     resolved: true,
+    voided: false,
     closedAt: day(-45),
   },
   {
@@ -198,6 +207,7 @@ export const resolvedFixture: PropView[] = [
       },
     ],
     resolved: true,
+    voided: false,
     closedAt: day(-30),
   },
   {
@@ -232,6 +242,7 @@ export const resolvedFixture: PropView[] = [
       },
     ],
     resolved: true,
+    voided: false,
     closedAt: day(-20),
   },
   {
@@ -244,6 +255,21 @@ export const resolvedFixture: PropView[] = [
     outcome: false,
     options: [],
     resolved: true,
+    voided: false,
     closedAt: day(-10),
+  },
+  {
+    propId: 18,
+    text: "Anthropic's market cap is higher than OpenAI's at the end of the year.",
+    category: "Economics",
+    kind: "binary",
+    yourForecast: 0.55,
+    communityAverage: 0.4,
+    // Voided: OpenAI was not publicly traded, so there is nothing to compare.
+    outcome: null,
+    options: [],
+    resolved: true,
+    voided: true,
+    closedAt: day(-5),
   },
 ];

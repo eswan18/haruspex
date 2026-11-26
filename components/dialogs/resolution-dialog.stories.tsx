@@ -17,6 +17,7 @@ const prop = {
   resolution_id: null,
   resolution: null,
   resolution_notes: null,
+  resolution_voided: null,
   year: 2026,
 } as unknown as VProp;
 
@@ -44,9 +45,28 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** A binary prop settles true, false, or not yet. */
+/** A binary prop settles true, false, void, or not yet. */
 export const Binary: Story = {
   args: { prop, isOpen: true, onClose: () => {} },
+};
+
+/**
+ * A voided prop reopens on Void with its reason, ready to be corrected to an
+ * answer or unresolved.
+ */
+export const Voided: Story = {
+  args: {
+    prop: {
+      ...prop,
+      prop_text:
+        "Anthropic's market cap is higher than OpenAI's at the end of 2027.",
+      resolution_id: 7,
+      resolution_voided: true,
+      resolution_notes: "OpenAI was not publicly traded at the end of 2027.",
+    },
+    isOpen: true,
+    onClose: () => {},
+  },
 };
 
 /** `one_of`: exactly one option won, so the outcomes are radios. */

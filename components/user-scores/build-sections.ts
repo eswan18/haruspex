@@ -21,6 +21,8 @@ function toPropView(f: UserForecastScore): PropView {
       outcome: o.outcome,
     })),
     resolved: true,
+    // Only scored forecasts reach this sheet, and a void is scored for nobody.
+    voided: false,
     closedAt: null,
   };
 }

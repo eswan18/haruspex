@@ -28,8 +28,10 @@ export interface PropView {
   outcome: boolean | null;
   /** Empty for binary props. */
   options: OptionView[];
-  /** True once a resolution exists, for every kind. */
+  /** True once a resolution exists, for every kind, including a void. */
   resolved: boolean;
+  /** Settled with no outcome; scored for nobody. */
+  voided: boolean;
   /** When forecasting closed. */
   closedAt: Date | null;
 }
@@ -41,7 +43,7 @@ export interface PropView {
  * or the viewer never forecasted, since there is nothing to score.
  */
 export function penaltyOf(prop: PropView): number | null {
-  if (!prop.resolved) return null;
+  if (!prop.resolved || prop.voided) return null;
 
   if (prop.kind === "binary") {
     if (prop.yourForecast === null || prop.outcome === null) return null;

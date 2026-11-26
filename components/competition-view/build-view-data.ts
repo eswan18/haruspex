@@ -57,7 +57,10 @@ export function buildViewData({
 }): CompetitionViewData {
   const isPrivate = competition.is_private;
 
+  // A void is settled even before its deadline: there is nothing left to
+  // forecast, so it is neither open nor owed.
   const isOpen = (p: PropWithUserForecast) => {
+    if (p.resolution_voided === true) return false;
     const d = closeDateOf(p, isPrivate);
     return d === null || new Date(d) > now;
   };

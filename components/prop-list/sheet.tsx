@@ -181,7 +181,15 @@ body:has(.hxp) { background: var(--riso-paper); }
  * read the column, and the tail beside each figure already shows the size of
  * the miss.
  */
-export function Penalty({ value }: { value: number | null }) {
+export function Penalty({
+  value,
+  voided = false,
+}: {
+  value: number | null;
+  /** A void costs nothing and says so, rather than reading as unscored. */
+  voided?: boolean;
+}) {
+  if (voided) return <span className="pen none">Void</span>;
   if (value === null) return <span className="pen none">—</span>;
   return <span className="pen">{value.toFixed(3)}</span>;
 }

@@ -40,6 +40,7 @@ export function buildPropViews({
     // `resolution_id` is the "is resolved" flag for every kind: a resolved
     // choice prop has a null `resolution`, with the outcomes on its options.
     resolved: p.resolution_id !== null,
+    voided: p.resolution_voided === true,
     closedAt: closeDateOf(p, isPrivate),
   }));
 }

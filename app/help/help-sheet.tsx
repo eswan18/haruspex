@@ -138,6 +138,11 @@ export function HelpSheet({
             Sometime after the deadline, a prop <strong>resolves</strong> when
             it&rsquo;s clear whether it came to pass.
           </p>
+          <p>
+            Some props say up front what would void them. A{" "}
+            <strong>voided</strong> prop is settled with no result, and counts
+            toward nobody&rsquo;s score.
+          </p>
           <h3>Scoring</h3>
           <p>
             Forecasts are scored by{" "}
