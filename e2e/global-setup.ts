@@ -1,8 +1,9 @@
 /**
  * Boots the built app against a real Postgres and a stub IdP, in that order:
- * Postgres, stub, seed, app. The app exits at boot unless its database is
- * migrated, which is why this is not Playwright's `webServer` (that starts
- * before global setup).
+ * Postgres, stub, seed, app. The app runs as production runs it: the
+ * standalone `server.js` (see harness.ts). It exits at boot unless its
+ * database is migrated, which is why this is not Playwright's `webServer`
+ * (that starts before global setup).
  *
  * Global teardown runs even when this throws part-way, and stops whatever had
  * been started.
@@ -16,6 +17,7 @@ import { Pool } from "pg";
 import type { Database } from "@/types/db_types";
 import { setup as startDatabase } from "../tests/globalSetup";
 import {
+  APP_HOST,
   APP_PORT,
   APP_URL,
   IDP_PORT,
@@ -79,7 +81,7 @@ async function writeStorageState(
       {
         name: "token",
         value: token,
-        domain: "localhost",
+        domain: APP_HOST,
         path: "/",
         expires: -1,
         httpOnly: true,

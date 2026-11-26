@@ -36,9 +36,15 @@ export async function seed(db: Kysely<Database>): Promise<Seed> {
   const factory = new TestDataFactory(db);
   // The factory records each row it creates for vitest's per-test cleanup, and
   // asks vitest which test is running to do it. There is no vitest here, and
-  // no cleanup to do: the database goes away with its container.
-  (factory as unknown as { getTracker(): { trackId(): void } }).getTracker =
-    () => ({ trackId() {} });
+  // no cleanup to do: the database goes away with its container. getTracker()
+  // is private, so check it is still there rather than patch nothing.
+  const patchable = factory as unknown as { getTracker?: unknown };
+  if (typeof patchable.getTracker !== "function") {
+    throw new Error(
+      "TestDataFactory has no getTracker() to replace; update e2e/support/seed.ts",
+    );
+  }
+  patchable.getTracker = () => ({ trackId() {} });
 
   // createUser gives each a random UUID as idp_user_id; the minted tokens'
   // `sub` is that value.

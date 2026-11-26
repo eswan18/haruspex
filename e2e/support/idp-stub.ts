@@ -11,6 +11,8 @@ import http from "node:http";
 
 import * as jose from "jose";
 
+import { LOOPBACK } from "./harness";
+
 /** The haruspex client's audience in identity, and the app's `IDP_AUDIENCE`. */
 export const AUDIENCE = "ethanswan:haruspex";
 
@@ -34,9 +36,9 @@ export async function startIdpStub(port: number): Promise<IdpStub> {
       { ...(await jose.exportJWK(publicKey)), kid: KEY_ID, alg: "ES256", use: "sig" },
     ],
   };
-  // 127.0.0.1 rather than localhost, so the app's server-side fetch of the
-  // keys cannot wander off to ::1 and find nothing there.
-  const url = `http://127.0.0.1:${port}`;
+  // The loopback address rather than localhost, so the app's server-side
+  // fetch of the keys cannot wander off to ::1 and find nothing there.
+  const url = `http://${LOOPBACK}:${port}`;
 
   const server = http.createServer((request, response) => {
     const { pathname } = new URL(request.url ?? "/", url);
@@ -54,7 +56,7 @@ export async function startIdpStub(port: number): Promise<IdpStub> {
 
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
-    server.listen(port, "127.0.0.1", () => {
+    server.listen(port, LOOPBACK, () => {
       server.off("error", reject);
       resolve();
     });
