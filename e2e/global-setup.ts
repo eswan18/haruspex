@@ -28,7 +28,13 @@ import {
   startApp,
   trackStub,
 } from "./support/harness";
-import { AUDIENCE, startIdpStub, type IdpStub } from "./support/idp-stub";
+import {
+  AUDIENCE,
+  CLIENT_ID,
+  CLIENT_SECRET,
+  startIdpStub,
+  type IdpStub,
+} from "./support/idp-stub";
 import { seed, type Seed, type TestUser } from "./support/seed";
 
 /**
@@ -56,8 +62,8 @@ function appEnv(databaseUrl: string, idpUrl: string): NodeJS.ProcessEnv {
     IDP_BASE_URL: idpUrl,
     IDP_PUBLIC_URL: idpUrl,
     IDP_AUDIENCE: AUDIENCE,
-    IDP_CLIENT_ID: "e2e",
-    IDP_CLIENT_SECRET: "e2e",
+    IDP_CLIENT_ID: CLIENT_ID,
+    IDP_CLIENT_SECRET: CLIENT_SECRET,
     JWT_SECRET: "e2e",
     APP_BASE_URL: APP_URL,
     PUBSUB_TOPIC: "e2e",
