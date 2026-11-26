@@ -49,6 +49,11 @@ export const LOOPBACK = "127.0.0.1";
  */
 export const APP_HOST = "localhost";
 export const APP_URL = `http://${APP_HOST}:${APP_PORT}`;
+/**
+ * The app's `JWT_SECRET`, which signs its unsubscribe links; the route sweep
+ * signs one with it.
+ */
+export const APP_JWT_SECRET = "e2e";
 /** The IdP stub: `IDP_BASE_URL`, `IDP_PUBLIC_URL` and its tokens' `iss`. */
 export const IDP_URL = `http://${LOOPBACK}:${IDP_PORT}`;
 

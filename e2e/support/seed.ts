@@ -39,6 +39,18 @@ export interface Seed {
   resolveCompetition: TestCompetition;
   /** Binary, unresolved, in `resolveCompetition`. */
   resolvableProp: TestProp;
+  /**
+   * Private, with `user` as its one member (a forecaster). Private
+   * competitions keep their deadlines on each prop, so its dates are null.
+   */
+  privateCompetition: TestCompetition;
+  /** Binary, unresolved, in `privateCompetition`, due in the future. */
+  privateProp: TestProp;
+  /**
+   * `user`'s own prop, in no competition. The `personal-props` feature flag is
+   * on for `user`, so their personal-props pages render.
+   */
+  personalProp: TestProp;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -115,6 +127,42 @@ export async function seed(db: Kysely<Database>): Promise<Seed> {
     { text: "E2E prop to resolve", kind: "binary" },
   );
 
+  const privateCompetition = await factory.createCompetition({
+    name: "E2E Private Competition",
+    is_private: true,
+    forecasts_open_date: null,
+    forecasts_close_date: null,
+    end_date: null,
+  });
+  await db
+    .insertInto("competition_members")
+    .values({
+      competition_id: privateCompetition.id,
+      user_id: user.id,
+      role: "forecaster",
+    })
+    .execute();
+  const privateProp = await factory.createCompetitionProp(
+    privateCompetition.id,
+    {
+      text: "E2E private prop",
+      kind: "binary",
+      forecasts_due_date: new Date(now + 7 * DAY_MS),
+      resolution_due_date: new Date(now + 30 * DAY_MS),
+    },
+  );
+
+  await db
+    .insertInto("feature_flags")
+    .values({ name: "personal-props", user_id: user.id, enabled: true })
+    .execute();
+  const personalProp = await factory.createPersonalProp(user.id, {
+    text: "E2E personal prop",
+    kind: "binary",
+    forecasts_due_date: new Date(now + 7 * DAY_MS),
+    resolution_due_date: new Date(now + 30 * DAY_MS),
+  });
+
   return {
     user,
     admin,
@@ -124,5 +172,8 @@ export async function seed(db: Kysely<Database>): Promise<Seed> {
     standingsCompetition,
     resolveCompetition,
     resolvableProp,
+    privateCompetition,
+    privateProp,
+    personalProp,
   };
 }

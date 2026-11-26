@@ -18,6 +18,7 @@ import type { Database } from "@/types/db_types";
 import { setup as startDatabase } from "../tests/globalSetup";
 import {
   APP_HOST,
+  APP_JWT_SECRET,
   APP_PORT,
   APP_URL,
   IDP_PORT,
@@ -64,7 +65,7 @@ function appEnv(databaseUrl: string, idpUrl: string): NodeJS.ProcessEnv {
     IDP_AUDIENCE: AUDIENCE,
     IDP_CLIENT_ID: CLIENT_ID,
     IDP_CLIENT_SECRET: CLIENT_SECRET,
-    JWT_SECRET: "e2e",
+    JWT_SECRET: APP_JWT_SECRET,
     APP_BASE_URL: APP_URL,
     PUBSUB_TOPIC: "e2e",
     GCP_PROJECT_ID: "e2e",
