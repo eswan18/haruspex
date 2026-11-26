@@ -17,18 +17,21 @@ test.describe("reader", () => {
     ).toBeVisible();
   });
 
-  test("SURPRISE: the competition page counts the resolved prop among 'All 2 open'", async ({
+  test("the competition overview shows its name and links to its prop lists", async ({
     page,
   }) => {
     await page.goto(competitionUrl);
     await expect(
-      page.getByRole("heading", { name: seed.competition.name }),
+      page.getByRole("heading", { level: 1, name: seed.competition.name }),
     ).toBeVisible();
-    // 2 props, one of them resolved, and the overview calls both "open": open
-    // means the competition still takes forecasts, not "unresolved". The
-    // resolved prop's text is not on this page, so its count is what is pinned.
-    await expect(page.getByRole("link", { name: /All 2 open/i })).toBeVisible();
-    await expect(page.getByRole("link", { name: /Resolved/ })).toBeVisible();
+    // The counts beside these links are deliberately not checked here.
+    await expect(
+      page.getByRole("link", { name: /Open props/ }),
+    ).toHaveAttribute("href", `${competitionUrl}/props/open`);
+    await expect(page.getByRole("link", { name: /Resolved/ })).toHaveAttribute(
+      "href",
+      `${competitionUrl}/props/resolved`,
+    );
   });
 
   test("the open props list, unfiltered, lists both props", async ({

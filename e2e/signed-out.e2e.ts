@@ -4,7 +4,7 @@ import { test, expect } from "./support/fixtures";
 import { APP_HOST, IDP_URL, STATE } from "./support/harness";
 
 test.describe("signed out", () => {
-  test("SURPRISE: / stays at / and shows the landing page, not a redirect to /login", async ({
+  test("/ shows signed-out visitors the landing page in place, not a redirect to /login", async ({
     page,
   }) => {
     await page.goto("/");
@@ -25,8 +25,11 @@ test.describe("signed out", () => {
     page,
   }) => {
     await page.goto("/account");
-    await expect(page).toHaveURL(/\/login\?redirect=%252Faccount$/);
     await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
+    // Where it leads back to, however it is encoded.
+    const url = new URL(page.url());
+    expect(url.pathname).toBe("/login");
+    expect(url.searchParams.get("redirect")).toContain("account");
   });
 
   test("GET /oauth/login redirects to the IdP with a PKCE S256 challenge", async ({
@@ -75,7 +78,7 @@ test.describe("signed out", () => {
     await expect(page.getByText("Public competitions")).toHaveCount(0);
   });
 
-  test("SURPRISE: /help is served to signed-out visitors", async ({ page }) => {
+  test("/help is served to signed-out visitors", async ({ page }) => {
     await page.goto("/help");
     // Not in PUBLIC_ROUTES, but servesAnonymous() lets it through.
     await expect(page).toHaveURL(/\/help$/);

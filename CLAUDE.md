@@ -38,8 +38,8 @@ This is a Next.js forecasting application inspired by Philip Tetlock's Good Judg
 - Test files: `**/*.{test,spec}.{ts,tsx}`
 - Coverage provided by V8 with HTML/JSON/text reports
 - UI components tested in Storybook (excluded from coverage)
-- Existing test files sit beside the code they cover (`lib/`, `lib/db_actions/`, `app/`, `components/`) plus container-backed tests in `tests/integration/`
-- **Browser smoke suite (`e2e/`)**: `npm run test:e2e` needs Docker (Testcontainers Postgres) and a prior `npm run build`, which itself needs `DATABASE_URL`, `IDP_BASE_URL` and `IDP_PUBLIC_URL` set to any dummy values, as CI does. It runs the standalone server as production does and signs in through a stub IdP, with no app-side auth bypass. Ports default to 3100/3101; override with `E2E_APP_PORT` / `E2E_IDP_PORT`. Add browser checks here only for flows that cross layers; detailed behaviour stays in the vitest suites.
+- Existing test files sit beside the code they cover (`lib/`, `lib/db_actions/`, `app/`, `components/`). Container-backed tests live in `tests/integration/` and also beside the code as `*.container.test.ts` (for example `lib/db_actions/*.container.test.ts`); they are skipped unless `TEST_USE_CONTAINERS=true`, which `npm run test:containers` sets
+- **Browser smoke suite (`e2e/`)**: `npm run test:e2e` needs Docker (Testcontainers Postgres) and a prior `npm run build`, which itself needs `DATABASE_URL`, `IDP_BASE_URL` and `IDP_PUBLIC_URL` set to any dummy values, as CI does. Before a first local run, install the browser with `npx playwright install chromium`. It runs the standalone server as production does and signs in through a stub IdP, with no app-side auth bypass. Ports default to 3100/3101; override with `E2E_APP_PORT` / `E2E_IDP_PORT`. Add browser checks here only for flows that cross layers; detailed behaviour stays in the vitest suites. `e2e/routes.e2e.ts` fails when a new `app/**/page.tsx` is not listed there: add the page to its sweep, or name the spec that covers it.
 
 ### Database Migrations
 
