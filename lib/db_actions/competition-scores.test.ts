@@ -484,4 +484,81 @@ describe("getCompetitionScores", () => {
       },
     );
   });
+
+  describe("voided props", () => {
+    /** P1 (yes) and P2 (no) are resolved; P3 is voided. */
+    async function competitionWithAVoid() {
+      const competition = await factory.createCompetition();
+      const p1 = await factory.createCompetitionProp(competition.id);
+      const p2 = await factory.createCompetitionProp(competition.id);
+      const p3 = await factory.createCompetitionProp(competition.id);
+      await factory.createResolution(p1.id, { resolution: true });
+      await factory.createResolution(p2.id, { resolution: false });
+      await factory.createResolution(p3.id, { resolution: null, voided: true });
+      return { competition, p1, p2, p3 };
+    }
+
+    ifRunningContainerTestsIt(
+      "counts a forecaster who skipped only the voided prop as complete",
+      async () => {
+        const user = await factory.createUser();
+        vi.mocked(getUserFromCookies).mockResolvedValue(user);
+        const { competition, p1, p2 } = await competitionWithAVoid();
+        await factory.createForecast(user.id, p1.id, { forecast: 0.8 });
+        await factory.createForecast(user.id, p2.id, { forecast: 0.4 });
+
+        const result = await getCompetitionScores({
+          competitionId: competition.id,
+        });
+
+        expect(result.success).toBe(true);
+        if (result.success) {
+          expect(result.data.incompleteUserIds).toEqual([]);
+        }
+      },
+    );
+
+    ifRunningContainerTestsIt(
+      "does not let a forecast on the voided prop cover a real gap",
+      async () => {
+        const user = await factory.createUser();
+        vi.mocked(getUserFromCookies).mockResolvedValue(user);
+        const { competition, p1, p3 } = await competitionWithAVoid();
+        await factory.createForecast(user.id, p1.id, { forecast: 0.8 });
+        await factory.createForecast(user.id, p3.id, { forecast: 0.9 });
+
+        const result = await getCompetitionScores({
+          competitionId: competition.id,
+        });
+
+        expect(result.success).toBe(true);
+        if (result.success) {
+          expect(result.data.incompleteUserIds).toEqual([user.id]);
+        }
+      },
+    );
+
+    ifRunningContainerTestsIt(
+      "leaves the voided prop out of the average",
+      async () => {
+        const user = await factory.createUser();
+        vi.mocked(getUserFromCookies).mockResolvedValue(user);
+        const { competition, p1, p2, p3 } = await competitionWithAVoid();
+        await factory.createForecast(user.id, p1.id, { forecast: 0.8 });
+        await factory.createForecast(user.id, p2.id, { forecast: 0.4 });
+        await factory.createForecast(user.id, p3.id, { forecast: 0.0 });
+
+        const result = await getCompetitionScores({
+          competitionId: competition.id,
+        });
+
+        expect(result.success).toBe(true);
+        if (result.success) {
+          // (1 - 0.8)^2 = 0.04 and (0 - 0.4)^2 = 0.16; the void counts for nothing.
+          expect(result.data.overallScores).toHaveLength(1);
+          expect(result.data.overallScores[0].score).toBeCloseTo(0.1, 10);
+        }
+      },
+    );
+  });
 });

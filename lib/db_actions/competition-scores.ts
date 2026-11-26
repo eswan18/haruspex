@@ -107,16 +107,20 @@ export async function getCompetitionScores({
       ]);
 
       // Compute which users have forecasted on every prop in the competition.
+      // A voided prop counts on neither side: skipping one leaves nothing to
+      // score, and forecasting one does not make up for a prop skipped.
       const [totalPropsResult, userForecastCounts] = await Promise.all([
         trx
-          .selectFrom("props")
+          .selectFrom("v_props")
           .select(sql`COUNT(*)`.as("count"))
           .where("competition_id", "=", competitionId)
+          .where("resolution_voided", "is not", true)
           .executeTakeFirstOrThrow(),
         trx
           .selectFrom("v_forecasts")
           .select(["user_id", sql`COUNT(DISTINCT prop_id)`.as("count")])
           .where("competition_id", "=", competitionId)
+          .where("resolution_voided", "is not", true)
           .groupBy("user_id")
           .execute(),
       ]);

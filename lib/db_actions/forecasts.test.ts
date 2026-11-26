@@ -197,6 +197,33 @@ describe("getRecentlyResolvedForecasts", () => {
       }
     },
   );
+
+  ifRunningContainerTestsIt("leaves out voided props", async () => {
+    const user = await factory.createUser({ name: "Void User" });
+    vi.mocked(getUserFromCookies).mockResolvedValue(user);
+    const competition = await factory.createCompetition();
+    const answered = await factory.createCompetitionProp(competition.id, {
+      text: "Answered prop",
+    });
+    const voided = await factory.createCompetitionProp(competition.id, {
+      text: "Voided prop",
+    });
+    await factory.createForecast(user.id, answered.id, { forecast: 0.7 });
+    await factory.createForecast(user.id, voided.id, { forecast: 0.2 });
+    await factory.createResolution(answered.id, { resolution: true });
+    // Settled after the answered one, so it would sort first if it were kept.
+    await factory.createResolution(voided.id, {
+      resolution: null,
+      voided: true,
+    });
+
+    const result = await getRecentlyResolvedForecasts({ userId: user.id });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.map((f) => f.prop_text)).toEqual(["Answered prop"]);
+    }
+  });
 });
 
 describe("getPropsWithUserForecasts", () => {

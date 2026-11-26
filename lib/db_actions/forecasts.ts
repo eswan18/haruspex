@@ -607,12 +607,14 @@ export async function getRecentlyResolvedForecasts({
   try {
     const results = await withRLS(currentUser?.id, async (trx) => {
       // A resolved choice prop has a null `resolution`; only `resolution_id`
-      // says whether a prop of any kind is resolved.
+      // says whether a prop of any kind is resolved. A void has no outcome to
+      // set a forecast against, so it is left out.
       const rows = await trx
         .selectFrom("v_forecasts")
         .selectAll()
         .where("user_id", "=", userId)
         .where("resolution_id", "is not", null)
+        .where("resolution_voided", "=", false)
         .orderBy("resolution_updated_at", "desc")
         .limit(limit)
         .execute();
