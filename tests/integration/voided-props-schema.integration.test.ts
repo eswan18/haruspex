@@ -1,5 +1,5 @@
 import { describe, expect, beforeEach } from "vitest";
-import { Kysely } from "kysely";
+import { Kysely, sql } from "kysely";
 import { Database } from "@/types/db_types";
 import { getTestDb } from "../helpers/testDatabase";
 import { TestDataFactory } from "../helpers/testFactories";
@@ -227,6 +227,19 @@ describe("voided resolutions schema", () => {
         .execute();
       expect(rows).toHaveLength(3);
       for (const row of rows) expect(row.score).toBeNull();
+    },
+  );
+
+  ifRunningContainerTestsIt(
+    "pins the definer function's search_path with pg_temp last",
+    async () => {
+      // A SECURITY DEFINER function must not let a session's temporary
+      // tables shadow the ones it reads; postgres searches pg_temp first
+      // unless it is named, last, in the function's own search_path.
+      const row = await sql<{ config: string[] | null }>`
+        SELECT proconfig AS config FROM pg_proc
+        WHERE proname = 'check_voided_resolution_has_no_outcomes'`.execute(db);
+      expect(row.rows[0].config).toEqual(["search_path=public, pg_temp"]);
     },
   );
 });

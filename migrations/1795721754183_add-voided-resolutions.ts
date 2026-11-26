@@ -45,7 +45,9 @@ export async function up(db: Kysely<any>): Promise<void> {
     END;
     $$ LANGUAGE plpgsql SECURITY DEFINER`.execute(db);
 
-  // SECURITY DEFINER so row-level security cannot hide the rows it counts.
+  // SECURITY DEFINER so row-level security cannot hide the rows it counts,
+  // with pg_temp named last so a session's temporary tables cannot shadow
+  // the ones it reads.
   await sql`
     CREATE FUNCTION check_voided_resolution_has_no_outcomes() RETURNS trigger AS $$
     DECLARE
@@ -62,7 +64,9 @@ export async function up(db: Kysely<any>): Promise<void> {
       END IF;
       RETURN NULL;
     END;
-    $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public`.execute(db);
+    $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp`.execute(
+    db,
+  );
   await sql`
     CREATE CONSTRAINT TRIGGER enforce_voided_no_outcomes
     AFTER INSERT OR UPDATE ON resolutions

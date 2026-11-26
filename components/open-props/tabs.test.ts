@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { PropWithUserForecast } from "@/types/db_types";
 
-import { CHOICES, matches, resolveChoice } from "./tabs";
+import { CHOICES, forecastProgress, matches, resolveChoice } from "./tabs";
 
 describe("resolveChoice", () => {
   it("falls back to the list's default when the URL asks for nothing", () => {
@@ -96,5 +96,26 @@ describe("matches", () => {
     for (const prop of [open, scoring, settled]) {
       expect(matches("all", prop)).toBe(true);
     }
+  });
+});
+
+describe("forecastProgress", () => {
+  const row = (forecastId: number | null, voided: boolean | null) =>
+    ({
+      user_forecast_id: forecastId,
+      resolution_voided: voided,
+    }) as PropWithUserForecast;
+
+  it("counts forecast props out of all of them", () => {
+    expect(forecastProgress([row(1, null), row(null, null)])).toEqual({
+      done: 1,
+      total: 2,
+    });
+  });
+
+  it("leaves voided props out, forecast or not", () => {
+    expect(
+      forecastProgress([row(1, null), row(null, true), row(2, true)]),
+    ).toEqual({ done: 1, total: 1 });
   });
 });

@@ -436,6 +436,15 @@ describe("user actions under row-level security", () => {
             ],
           }),
         );
+        // Voiding it clears the outcomes; the database's check that a void
+        // keeps none reads them past RLS.
+        expectOk(await resolveProp({ propId, voided: true, overwrite: true }));
+        const outcomes = await db
+          .selectFrom("resolution_options")
+          .select("option_id")
+          .where("prop_id", "=", propId)
+          .execute();
+        expect(outcomes).toEqual([]);
       },
     );
   });

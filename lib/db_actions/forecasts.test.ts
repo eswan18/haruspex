@@ -11,6 +11,7 @@ let getRecentlyResolvedForecasts: typeof import("./forecasts").getRecentlyResolv
 let getPropsWithUserForecasts: typeof import("./forecasts").getPropsWithUserForecasts;
 let saveChoiceForecast: typeof import("./forecasts").saveChoiceForecast;
 let createForecast: typeof import("./forecasts").createForecast;
+let getUnforecastedProps: typeof import("./forecasts").getUnforecastedProps;
 
 // `forecasts.ts` transitively imports the server-only `attachOptions` helper.
 vi.mock("server-only", () => ({}));
@@ -551,6 +552,48 @@ describe("saveChoiceForecast and the binary guards", () => {
       const header = await storedHeader(result.data);
       // `forecasts.forecast` is numeric, which pg returns as a string.
       expect(Number(header.forecast)).toBe(0.75);
+    },
+  );
+});
+
+describe("getUnforecastedProps", () => {
+  let testDb: any;
+  let factory: TestDataFactory;
+
+  beforeEach(async () => {
+    if (shouldRunContainerTests()) {
+      testDb = await getTestDb();
+      factory = new TestDataFactory(testDb);
+      vi.clearAllMocks();
+      getUnforecastedProps = (await import("./forecasts")).getUnforecastedProps;
+    } else {
+      vi.clearAllMocks();
+    }
+  });
+
+  ifRunningContainerTestsIt(
+    "does not count a voided prop as owed",
+    async () => {
+      const admin = await factory.createAdminUser();
+      const user = await factory.createUser();
+      vi.mocked(getUserFromCookies).mockResolvedValue(admin);
+      const competition = await factory.createCompetition();
+      const owed = await factory.createCompetitionProp(competition.id);
+      const voided = await factory.createCompetitionProp(competition.id);
+      await factory.createResolution(voided.id, {
+        resolution: null,
+        voided: true,
+      });
+
+      const result = await getUnforecastedProps({
+        competitionId: competition.id,
+        userId: user.id,
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.map((p) => p.prop_id)).toEqual([owed.id]);
+      }
     },
   );
 });

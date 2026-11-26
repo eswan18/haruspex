@@ -116,6 +116,27 @@ export function getPropStatusFromProp(
 }
 
 /**
+ * Whether a competition's prop still takes forecasts: its deadline (the
+ * prop's own in a private competition, the season's in a public one) is in the
+ * future or absent, and it has not been voided, which settles it early.
+ */
+export function isOpenInCompetition(
+  prop: {
+    prop_forecasts_due_date: Date | null;
+    competition_forecasts_close_date: Date | null;
+    resolution_voided: boolean | null;
+  },
+  isPrivate: boolean,
+  now: Date,
+): boolean {
+  if (prop.resolution_voided === true) return false;
+  const due = isPrivate
+    ? prop.prop_forecasts_due_date
+    : prop.competition_forecasts_close_date;
+  return due === null || new Date(due) > now;
+}
+
+/**
  * Get human-readable label for a prop status
  */
 export function getPropStatusLabel(status: PropStatus): string {

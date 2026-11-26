@@ -457,12 +457,14 @@ export async function getUnforecastedProps({
 
   const startTime = Date.now();
   try {
-    // Fetch props without a corresponding entry in the forecasts table for that user.
+    // Fetch props without a corresponding entry in the forecasts table for
+    // that user. A voided prop is owed by nobody.
     const results = await withRLS(currentUser?.id, async (trx) => {
       return await trx
         .selectFrom("v_props")
         .selectAll()
         .where("competition_id", "=", competitionId)
+        .where("resolution_voided", "is not", true)
         .where(({ not, exists, selectFrom }) =>
           not(
             exists(

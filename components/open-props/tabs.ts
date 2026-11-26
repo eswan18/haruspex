@@ -63,6 +63,21 @@ export function resolveChoice(tabs: Tabs, asked: string | null): Choice {
   return CHOICES[tabs].find((c) => c.id === asked)?.id ?? DEFAULT_CHOICE[tabs];
 }
 
+/**
+ * How far the reader has got: props they have forecast, out of those that
+ * want a forecast. A voided prop wants none, so it counts on neither side.
+ */
+export function forecastProgress(props: PropWithUserForecast[]): {
+  done: number;
+  total: number;
+} {
+  const counted = props.filter((p) => p.resolution_voided !== true);
+  return {
+    done: counted.filter((p) => p.user_forecast_id !== null).length,
+    total: counted.length,
+  };
+}
+
 /** Whether a prop belongs in the chosen subset. */
 export function matches(choice: Choice, prop: PropWithUserForecast): boolean {
   if (choice === "all") return true;

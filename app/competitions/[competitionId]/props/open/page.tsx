@@ -1,6 +1,7 @@
 import ErrorPage from "@/components/pages/error-page";
 import { getCurrentUserRole } from "@/lib/db_actions/competition-members";
 import { canCreateProps } from "@/lib/prop-write-access";
+import { isOpenInCompetition } from "@/lib/prop-status";
 import { getPropsWithUserForecasts } from "@/lib/db_actions/forecasts";
 import { competitionAccess } from "../../access";
 import { AccessDenied } from "../../access-denied";
@@ -27,14 +28,12 @@ export default async function Page({
   ]);
   if (!propsResult.success) return <ErrorPage title={propsResult.error} />;
 
-  // Open: still forecastable, so its deadline is in the future or absent.
+  // Open: still forecastable, by the same rule as the competition overview,
+  // so a voided prop is not in the to-do list even before its deadline.
   const now = new Date();
-  const open = propsResult.data.filter((p) => {
-    const due = competition.is_private
-      ? p.prop_forecasts_due_date
-      : p.competition_forecasts_close_date;
-    return due === null || new Date(due) > now;
-  });
+  const open = propsResult.data.filter((p) =>
+    isOpenInCompetition(p, competition.is_private, now),
+  );
 
   return (
     <OpenPropsPage
