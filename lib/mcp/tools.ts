@@ -58,6 +58,8 @@ export type PropResult = {
 
 export type PropDetail = PropResult & {
   notes: string | null;
+  /** How it was settled, or why it was voided. Null while unresolved. */
+  resolution_notes: string | null;
   your_forecast: number | null;
 };
 
@@ -151,6 +153,7 @@ function propDetail(
   return {
     ...propResult(prop),
     notes: prop.prop_notes,
+    resolution_notes: prop.resolution_notes,
     your_forecast: prop.user_forecast ?? null,
   };
 }

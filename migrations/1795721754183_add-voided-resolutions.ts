@@ -34,7 +34,8 @@ export async function up(db: Kysely<any>): Promise<void> {
     db,
   );
 
-  // The kind rule from 1788220800000, skipped for a void.
+  // The kind rule from 1788220800000, skipped for a void. It is SECURITY
+  // DEFINER, so rewriting it is the moment to pin its search_path too.
   await sql`
     CREATE OR REPLACE FUNCTION check_resolution_matches_prop_kind() RETURNS trigger AS $$
     BEGIN
@@ -43,7 +44,9 @@ export async function up(db: Kysely<any>): Promise<void> {
       END IF;
       RETURN NEW;
     END;
-    $$ LANGUAGE plpgsql SECURITY DEFINER`.execute(db);
+    $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp`.execute(
+    db,
+  );
 
   // SECURITY DEFINER so row-level security cannot hide the rows it counts,
   // with pg_temp named last so a session's temporary tables cannot shadow
@@ -88,6 +91,19 @@ export async function up(db: Kysely<any>): Promise<void> {
 }
 
 export async function down(db: Kysely<any>): Promise<void> {
+  // Dropping the column would turn a binary void into a binary resolution
+  // with no value, which the restored kind rule forbids (it checks writes,
+  // not existing rows, so nothing else here would fail), and a choice void
+  // into a resolved prop with no outcomes. Refuse instead.
+  await sql`
+    DO $$
+    BEGIN
+      IF EXISTS (SELECT 1 FROM resolutions WHERE voided) THEN
+        RAISE EXCEPTION 'cannot roll back voided props while voided resolutions exist; unresolve or answer them first';
+      END IF;
+    END
+    $$`.execute(db);
+
   await db.schema.dropView("v_forecasts").execute();
   await db.schema.dropView("v_props").execute();
   await createViews(db, { withVoided: false });
@@ -111,10 +127,6 @@ export async function down(db: Kysely<any>): Promise<void> {
     END;
     $$ LANGUAGE plpgsql SECURITY DEFINER`.execute(db);
 
-  // Run this only with no voids stored. Dropping the column turns a binary
-  // void into a binary resolution with no value, which the restored kind rule
-  // forbids (it checks writes, not existing rows, so nothing here would fail),
-  // and a choice void into a resolved prop with no outcomes.
   await sql`ALTER TABLE resolutions DROP CONSTRAINT resolutions_voided_has_no_value`.execute(
     db,
   );

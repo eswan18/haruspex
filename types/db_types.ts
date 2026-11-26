@@ -113,7 +113,8 @@ export interface ResolutionsTable {
   resolution: boolean | null;
   /**
    * A void: settled with no outcome, scored for nobody. Never set together
-   * with `resolution` or with option rows; the database enforces both.
+   * with `resolution` (a CHECK) or with option rows (checked at commit, which
+   * holds for one writer at a time; resolveProp serialises on this row).
    */
   voided: Generated<boolean>;
   notes: string | null;

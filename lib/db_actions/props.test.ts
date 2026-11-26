@@ -1029,7 +1029,11 @@ describe("Props Unit Tests", () => {
     }: {
       prop?: { prop_kind: string };
       optionIds?: number[];
-      existingResolution?: { id: number; resolution: boolean | null };
+      existingResolution?: {
+        id: number;
+        resolution: boolean | null;
+        voided: boolean;
+      };
       resolutionId?: number;
     }) {
       const recorded = {
@@ -1147,7 +1151,7 @@ describe("Props Unit Tests", () => {
     it("should reject resolution when already resolved without overwrite", async () => {
       const { trx, recorded } = makeResolveTrx({
         prop: binaryProp,
-        existingResolution: { id: 7, resolution: true },
+        existingResolution: { id: 7, resolution: true, voided: false },
       });
       runWith(trx);
 
@@ -1169,7 +1173,7 @@ describe("Props Unit Tests", () => {
     it("should update resolution when overwrite is true", async () => {
       const { trx, recorded } = makeResolveTrx({
         prop: binaryProp,
-        existingResolution: { id: 7, resolution: true },
+        existingResolution: { id: 7, resolution: true, voided: false },
       });
       runWith(trx);
 
@@ -1337,7 +1341,7 @@ describe("Props Unit Tests", () => {
       const { trx, recorded } = makeResolveTrx({
         prop: oneOfProp,
         optionIds: [10, 11],
-        existingResolution: { id: 7, resolution: null },
+        existingResolution: { id: 7, resolution: null, voided: false },
       });
       runWith(trx);
 

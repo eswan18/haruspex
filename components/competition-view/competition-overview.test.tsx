@@ -55,3 +55,20 @@ describe("CompetitionOverview's new-prop link", () => {
     expect(html).toContain('href="/competitions/13/props/new"');
   });
 });
+
+describe("CompetitionOverview before anyone is scored", () => {
+  it("does not say nothing has resolved when only voids are settled", () => {
+    // A void counts as resolved but scores nobody, so the board stays empty.
+    const html = render({
+      data: {
+        ...emptyPrivateSeason,
+        counts: { ...emptyPrivateSeason.counts, resolved: 1, total: 3 },
+      },
+      ...shared,
+    });
+
+    expect(html).toContain("1 of 3 resolved");
+    expect(html).not.toContain("Nothing has resolved yet");
+    expect(html).toContain("Nothing has been scored yet");
+  });
+});

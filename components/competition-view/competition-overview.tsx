@@ -181,7 +181,8 @@ export function CompetitionOverview({
                 </>
               ) : (
                 <p className="empty">
-                  Nothing has resolved yet. Scores appear with the first result.
+                  Nothing has been scored yet. Scores appear with the first
+                  result.
                 </p>
               )}
             </div>

@@ -240,6 +240,11 @@ describe("voided resolutions schema", () => {
         SELECT proconfig AS config FROM pg_proc
         WHERE proname = 'check_voided_resolution_has_no_outcomes'`.execute(db);
       expect(row.rows[0].config).toEqual(["search_path=public, pg_temp"]);
+      // The kind rule this migration rewrites gets the same pin.
+      const kind = await sql<{ config: string[] | null }>`
+        SELECT proconfig AS config FROM pg_proc
+        WHERE proname = 'check_resolution_matches_prop_kind'`.execute(db);
+      expect(kind.rows[0].config).toEqual(["search_path=public, pg_temp"]);
     },
   );
 });

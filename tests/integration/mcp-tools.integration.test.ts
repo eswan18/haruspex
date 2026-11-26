@@ -476,6 +476,8 @@ describe("MCP tools under row-level security", () => {
         expect(result.data).toMatchObject({
           status: "voided",
           resolution: null,
+          // An agent reading the prop back can see why it was voided.
+          resolution_notes: "condition failed",
         });
         expect(result.summary).toBe(`Voided prop ${prop.id}`);
       },

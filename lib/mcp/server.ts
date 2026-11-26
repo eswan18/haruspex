@@ -75,6 +75,7 @@ const propResult = z.object({
 
 const propDetail = propResult.extend({
   notes: z.string().nullable(),
+  resolution_notes: z.string().nullable(),
   your_forecast: z.number().nullable(),
 });
 
@@ -227,7 +228,7 @@ export function buildMcpServer(caller: VUser): McpServer {
     {
       title: "Get a prop",
       description:
-        "One prop in full: its options, deadlines, status, resolution, notes, and your own forecast.",
+        "One prop in full: its options, deadlines, status, resolution and resolution notes (how it was settled, or why it was voided), notes, and your own forecast.",
       inputSchema: z.object({ prop_id: z.number().int() }),
       outputSchema: propDetail,
       annotations: READ_ONLY,

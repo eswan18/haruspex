@@ -362,6 +362,12 @@ export async function resolveProp(
     currentUserId: currentUser.id,
   });
 
+  // A server action takes whatever the browser sends, and a truthy string
+  // would pass as a void below and then be stored as false.
+  if (typeof voided !== "boolean") {
+    return error("voided must be true or false", ERROR_CODES.VALIDATION_ERROR);
+  }
+
   const startTime = Date.now();
   // Captured inside the transaction so the success log can name the kind; the
   // `resolution` field is undefined for choice props.
@@ -437,7 +443,7 @@ export async function resolveProp(
       const existingResolution = await trx
         .selectFrom("resolutions")
         .where("prop_id", "=", propId)
-        .select(["id", "resolution"])
+        .select(["id", "resolution", "voided"])
         .executeTakeFirst();
       if (!!existingResolution && !overwrite) {
         logger.warn("Attempted to resolve prop that already has resolution", {
@@ -456,10 +462,19 @@ export async function resolveProp(
       const headerValue = choice || voided ? null : resolution!;
       let resolutionId: number;
       if (existingResolution) {
-        // Update the existing record.
+        // Update the existing record. Switching between a void and an answer
+        // is a new settlement: the old one's notes explain the wrong thing, so
+        // they go unless new ones came, and whoever made the switch is now the
+        // one who settled it.
+        const switched = existingResolution.voided !== voided;
         const updated = await trx
           .updateTable("resolutions")
-          .set({ resolution: headerValue, voided, notes })
+          .set({
+            resolution: headerValue,
+            voided,
+            notes: switched ? (notes ?? null) : notes,
+            ...(switched ? { user_id: currentUser.id } : {}),
+          })
           .where("prop_id", "=", propId)
           .returning("id")
           .executeTakeFirstOrThrow();
