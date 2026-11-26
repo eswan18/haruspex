@@ -162,6 +162,32 @@ describe("MCP tools under row-level security", () => {
 
   describe("listPropsTool", () => {
     ifRunningContainerTestsIt(
+      "lists voided props under status voided, apart from resolved ones",
+      async () => {
+        const owner = await factory.createUser();
+        const voided = await factory.createPersonalProp(owner.id);
+        const answered = await factory.createPersonalProp(owner.id);
+        await factory.createResolution(voided.id, {
+          resolution: null,
+          voided: true,
+        });
+        await factory.createResolution(answered.id, { resolution: true });
+
+        const onlyVoided = await listPropsTool(as(owner), {
+          personal: true,
+          status: "voided",
+        });
+        const onlyResolved = await listPropsTool(as(owner), {
+          personal: true,
+          status: "resolved",
+        });
+        if (!onlyVoided.ok || !onlyResolved.ok) throw new Error("read");
+        expect(ids(onlyVoided)).toEqual([voided.id]);
+        expect(ids(onlyResolved)).toEqual([answered.id]);
+      },
+    );
+
+    ifRunningContainerTestsIt(
       "omits another user's personal prop even for a site admin",
       async () => {
         const admin = await factory.createAdminUser();
@@ -436,6 +462,25 @@ describe("MCP tools under row-level security", () => {
   });
 
   describe("resolvePropTool", () => {
+    ifRunningContainerTestsIt(
+      "lets the owner void a personal prop",
+      async () => {
+        const owner = await factory.createUser();
+        const prop = await factory.createPersonalProp(owner.id);
+        const result = await resolvePropTool(as(owner), {
+          prop_id: prop.id,
+          voided: true,
+          notes: "condition failed",
+        });
+        if (!result.ok) throw new Error(result.error);
+        expect(result.data).toMatchObject({
+          status: "voided",
+          resolution: null,
+        });
+        expect(result.summary).toBe(`Voided prop ${prop.id}`);
+      },
+    );
+
     ifRunningContainerTestsIt(
       "lets the owner resolve a personal binary prop",
       async () => {

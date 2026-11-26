@@ -50,7 +50,7 @@ const deadline = z.iso.datetime({ offset: true });
 
 const named = z.object({ id: z.number().int(), name: z.string() });
 
-const propStatus = z.enum(["open", "closed", "resolved"]);
+const propStatus = z.enum(["open", "closed", "resolved", "voided"]);
 
 const propResult = z.object({
   id: z.number().int(),
@@ -200,7 +200,7 @@ export function buildMcpServer(caller: VUser): McpServer {
     {
       title: "List props",
       description:
-        "List props (forecasting questions) you can see, newest first: those in one competition, or your personal props, or all of them. Filter by status (open for forecasts, closed awaiting resolution, or resolved). truncated is true when more matched than limit (default 50).",
+        "List props (forecasting questions) you can see, newest first: those in one competition, or your personal props, or all of them. Filter by status (open for forecasts, closed awaiting resolution, resolved, or voided). truncated is true when more matched than limit (default 50).",
       inputSchema: z.object({
         competition: idOrName
           .optional()
@@ -272,7 +272,7 @@ export function buildMcpServer(caller: VUser): McpServer {
     {
       title: "Resolve a prop",
       description:
-        "Record how a prop turned out: resolution (true/false) for a binary prop, or outcomes (one per option) for a choice prop. A prop that is already resolved is left alone unless overwrite is true.",
+        "Record how a prop turned out: resolution (true/false) for a binary prop, or outcomes (one per option) for a choice prop. Pass voided: true instead, with neither, when the prop's own terms void it (a condition it depended on did not hold) or it cannot be answered; say why in notes. A voided prop is scored for nobody. A prop that is already resolved or voided is left alone unless overwrite is true.",
       inputSchema: z.object({
         prop_id: z.number().int(),
         resolution: z.boolean().optional(),
@@ -281,6 +281,7 @@ export function buildMcpServer(caller: VUser): McpServer {
             z.object({ option_id: z.number().int(), outcome: z.boolean() }),
           )
           .optional(),
+        voided: z.boolean().optional(),
         notes: z.string().optional(),
         overwrite: z.boolean().optional(),
       }),
