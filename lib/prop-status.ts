@@ -10,7 +10,8 @@ export type PropStatus =
   | "unresolved" // Past deadline, awaiting resolution
   | "resolved-yes" // Resolved as true
   | "resolved-no" // Resolved as false
-  | "resolved"; // Resolved, but without a yes/no answer (choice props)
+  | "resolved" // Resolved, but without a yes/no answer (choice props)
+  | "voided"; // Settled with no outcome; scored for nobody
 
 export interface PropStatusOptions {
   /** Current date for testing (default: new Date()) */
@@ -21,6 +22,8 @@ export interface PropStatusOptions {
    * `resolution` null, so callers pass this to get "resolved".
    */
   isResolved?: boolean;
+  /** Whether the prop was voided. Takes precedence over everything else. */
+  isVoided?: boolean;
 }
 
 /**
@@ -47,6 +50,11 @@ export function getPropStatus(
   options?: PropStatusOptions,
 ): PropStatus {
   const currentDate = options?.currentDate ?? new Date();
+
+  // A void is settled and has no answer, whatever the dates say.
+  if (options?.isVoided) {
+    return "voided";
+  }
 
   // Check resolution first - resolved props have a definitive status regardless of dates
   if (resolution !== null) {
@@ -84,6 +92,7 @@ export function getPropStatusFromProp(
     competition_is_private?: boolean | null;
     resolution: boolean | null;
     resolution_id?: number | null;
+    resolution_voided?: boolean | null;
   },
   options?: PropStatusOptions,
 ): PropStatus {
@@ -102,6 +111,7 @@ export function getPropStatusFromProp(
   return getPropStatus(closeDate, prop.resolution, {
     ...options,
     isResolved: prop.resolution_id != null,
+    isVoided: prop.resolution_voided === true,
   });
 }
 
@@ -120,5 +130,7 @@ export function getPropStatusLabel(status: PropStatus): string {
       return "No";
     case "resolved":
       return "Resolved";
+    case "voided":
+      return "Voided";
   }
 }

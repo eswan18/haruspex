@@ -164,3 +164,55 @@ describe("choice props", () => {
     expect(getPropStatusLabel("resolved")).toBe("Resolved");
   });
 });
+
+describe("voided props", () => {
+  const now = new Date("2024-06-15T12:00:00Z");
+  const future = new Date("2024-06-20T12:00:00Z");
+  const past = new Date("2024-06-10T12:00:00Z");
+
+  it("reads voided even before the deadline", () => {
+    expect(
+      getPropStatus(future, null, {
+        currentDate: now,
+        isResolved: true,
+        isVoided: true,
+      }),
+    ).toBe("voided");
+  });
+
+  it("reads voided after the deadline, not resolved", () => {
+    expect(
+      getPropStatus(past, null, {
+        currentDate: now,
+        isResolved: true,
+        isVoided: true,
+      }),
+    ).toBe("voided");
+  });
+
+  it("getPropStatusFromProp reads resolution_voided", () => {
+    const base = {
+      prop_forecasts_due_date: past,
+      competition_forecasts_close_date: null,
+      competition_is_private: null,
+      resolution: null,
+      resolution_id: 7,
+    };
+    expect(
+      getPropStatusFromProp(
+        { ...base, resolution_voided: true },
+        { currentDate: now },
+      ),
+    ).toBe("voided");
+    expect(
+      getPropStatusFromProp(
+        { ...base, resolution_voided: false },
+        { currentDate: now },
+      ),
+    ).toBe("resolved");
+  });
+
+  it("labels it Voided", () => {
+    expect(getPropStatusLabel("voided")).toBe("Voided");
+  });
+});

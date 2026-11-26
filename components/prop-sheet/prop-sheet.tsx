@@ -189,6 +189,7 @@ const STATUS_LABEL: Record<PropStatus, string> = {
   "resolved-yes": "Resolved · Yes",
   "resolved-no": "Resolved · No",
   resolved: "Resolved",
+  voided: "Voided",
 };
 
 /**

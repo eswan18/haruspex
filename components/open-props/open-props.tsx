@@ -170,6 +170,7 @@ const STATUS_WORD: Record<string, string> = {
   "resolved-yes": "Resolved · Yes",
   "resolved-no": "Resolved · No",
   resolved: "Resolved",
+  voided: "Voided",
   open: "",
 };
 
