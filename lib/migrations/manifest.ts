@@ -56,4 +56,5 @@ export const MIGRATION_MANIFEST: readonly string[] = [
   "1793418140100_suggestions-start-undecided",
   "1793420000000_user-active-days",
   "1795095727135_resolutions-owner-from-prop",
+  "1795721754183_add-voided-resolutions",
 ];
