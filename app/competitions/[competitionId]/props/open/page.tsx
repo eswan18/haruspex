@@ -29,7 +29,7 @@ export default async function Page({
   if (!propsResult.success) return <ErrorPage title={propsResult.error} />;
 
   // Open: still forecastable, by the same rule as the competition overview,
-  // so a voided prop is not in the to-do list even before its deadline.
+  // so a resolved or voided prop is not listed even before its deadline.
   const now = new Date();
   const open = propsResult.data.filter((p) =>
     isOpenInCompetition(p, competition.is_private, now),
