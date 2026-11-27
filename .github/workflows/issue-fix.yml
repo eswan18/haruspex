@@ -1,0 +1,298 @@
+name: Issue Fix
+
+# Follows up on the pull requests issue-agent.yml opens.
+#
+# When PR Checks fails on one, the factory agent gets the failure log and
+# tries to repair its change: up to MAX_ROUNDS attempts, then the pull request
+# is labelled needs-human and left alone. When PR Checks passes, the owner is
+# told it is ready. Nothing here merges.
+#
+# The same split as issue-agent.yml: `propose` runs the agent and can only
+# produce a patch; `push` runs no AI, checks the patch against the default
+# branch's rules, and pushes it as the factory App.
+#
+# workflow_run always uses this file from the default branch, so a pull
+# request cannot change it. Event fields such as the branch name are
+# attacker-shaped strings: they are passed through `env`, never interpolated
+# into a script.
+on:
+  workflow_run:
+    workflows: ["PR Checks"]
+    types: [completed]
+
+permissions: {}
+
+concurrency:
+  group: issue-fix-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+env:
+  MAX_ROUNDS: "3"
+  # The agent's repairs are recognised by this subject line when counting rounds.
+  COMMIT_SUBJECT: "Fix failing checks"
+  # Only pull requests this account opened are followed up.
+  FACTORY_BOT: "haruspex-factory[bot]"
+
+jobs:
+  find:
+    name: Find the pull request
+    # Same-repository factory branches only. A fork cannot reach this job.
+    if: >
+      github.event.workflow_run.conclusion == 'failure' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      startsWith(github.event.workflow_run.head_branch, 'factory/issue-') &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+    outputs:
+      pr_number: ${{ steps.pr.outputs.number }}
+      issue_number: ${{ steps.pr.outputs.issue }}
+      round: ${{ steps.pr.outputs.round }}
+      give_up: ${{ steps.pr.outputs.give_up }}
+      allow_new_tests: ${{ steps.pr.outputs.allow_new_tests }}
+    steps:
+      - name: Checkout the guard
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/guard
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+
+      - name: Find the pull request and count earlier attempts
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          GUARD_REPO: ${{ github.repository }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          skip() { echo "$1"; echo "give_up=skip" >> "$GITHUB_OUTPUT"; exit 0; }
+          [[ "$BRANCH" =~ ^factory/issue-([1-9][0-9]{0,8})$ ]] || skip "Not a factory branch."
+          issue=${BASH_REMATCH[1]}
+          pr=$(gh api --method GET "repos/$REPO/pulls" -f state=open -f head="${REPO%%/*}:$BRANCH" \
+            | jq -c --arg bot "$FACTORY_BOT" '[.[] | select(.user.login == $bot and .user.type == "Bot")][0] // empty')
+          [ -n "$pr" ] || skip "No open pull request from the factory for this branch; nothing to do."
+          number=$(jq -r .number <<<"$pr")
+          # Once handed to a person, stay out. Removing the label lets the
+          # agent try again.
+          if jq -e '[.labels[].name] | index("needs-human")' <<<"$pr" > /dev/null; then
+            skip "Pull request #$number is labelled needs-human; leaving it alone."
+          fi
+          if [ "$(jq -r .head.sha <<<"$pr")" != "$HEAD_SHA" ]; then
+            skip "The branch has moved on since this run; a newer run will handle it."
+          fi
+          subjects=$(gh api --paginate "repos/$REPO/pulls/$number/commits" \
+            --jq '.[].commit.message | split("\n")[0]')
+          done_rounds=$(grep -c -F "$COMMIT_SUBJECT" <<<"$subjects" || true)
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+          echo "issue=$issue" >> "$GITHUB_OUTPUT"
+          echo "round=$((done_rounds + 1))" >> "$GITHUB_OUTPUT"
+          allow=$(GUARD_ISSUE_NUMBER="$issue" node .github/guard/issue-allows-tests.ts)
+          echo "New test files allowed: $allow"
+          echo "allow_new_tests=$allow" >> "$GITHUB_OUTPUT"
+          if [ "$done_rounds" -ge "$MAX_ROUNDS" ]; then
+            echo "Already tried $done_rounds time(s); handing over to a person."
+            echo "give_up=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "give_up=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  propose:
+    name: Propose a repair
+    needs: find
+    if: needs.find.outputs.give_up == 'false'
+    permissions:
+      contents: read
+      actions: read
+      issues: read
+    uses: ./.github/workflows/factory-agent.yml
+    with:
+      ref: ${{ github.event.workflow_run.head_sha }}
+      issue_number: ${{ needs.find.outputs.issue_number }}
+      failed_run_id: ${{ github.event.workflow_run.id }}
+      allow_new_tests: ${{ needs.find.outputs.allow_new_tests == 'true' }}
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+  push:
+    name: Check and push the repair
+    needs: [find, propose]
+    if: needs.propose.outputs.patch != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      # No `ref`: on workflow_run this is the default branch, so these are the
+      # rules a pull request cannot have changed.
+      - name: Checkout the default branch's rules
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/guard
+          path: rules
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+
+      - name: Mint a token for the factory App
+        id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.FACTORY_APP_ID }}
+          private-key: ${{ secrets.FACTORY_APP_KEY }}
+          permission-contents: write
+
+      # Full history, so the point where the branch left the default branch
+      # can be found.
+      - name: Checkout the failing commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          path: work
+          fetch-depth: 0
+          token: ${{ steps.app.outputs.token }}
+
+      - name: Check the patch, then commit and push it
+        working-directory: work
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          APP_SLUG: ${{ steps.app.outputs.app-slug }}
+          PATCH: ${{ needs.propose.outputs.patch }}
+          ALLOW_NEW_TESTS: ${{ needs.find.outputs.allow_new_tests }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          ROUND: ${{ needs.find.outputs.round }}
+          COMMIT_BODY: "PR Checks failed: ${{ github.event.workflow_run.html_url }}"
+        run: |
+          set -euo pipefail
+          BASE_SHA=$(git merge-base "refs/remotes/origin/$DEFAULT_BRANCH" HEAD)
+          export BASE_SHA
+          export COMMIT_SUBJECT="$COMMIT_SUBJECT (round $ROUND of $MAX_ROUNDS)"
+          bash ../rules/.github/guard/apply-patch.sh
+          # Fails if the branch has moved since the failing run, which is right:
+          # the repair was written against a commit that is no longer the tip.
+          git push origin "HEAD:refs/heads/$BRANCH"
+
+  escalate:
+    name: Hand over to a person
+    needs: [find, propose, push]
+    # Out of rounds, no usable patch, or the patch was refused.
+    if: >
+      always() &&
+      needs.find.result == 'success' &&
+      needs.find.outputs.give_up != 'skip' &&
+      needs.find.outputs.pr_number != '' &&
+      needs.push.result != 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Mint a token for the factory App
+        id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.FACTORY_APP_ID }}
+          private-key: ${{ secrets.FACTORY_APP_KEY }}
+          permission-pull-requests: write
+
+      - name: Label the pull request and say why
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ needs.find.outputs.pr_number }}
+          GIVE_UP: ${{ needs.find.outputs.give_up }}
+          PROPOSE: ${{ needs.propose.result }}
+          AGENT_OK: ${{ needs.propose.outputs.agent_ok }}
+          PUSH: ${{ needs.push.result }}
+          THIS_RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          NOTE: ${{ needs.propose.outputs.note }}
+        run: |
+          set -euo pipefail
+          if [ "$GIVE_UP" = "true" ]; then
+            reason="it has already tried $MAX_ROUNDS times and PR Checks still fails"
+          elif [ "$PROPOSE" != "success" ] || [ "$AGENT_OK" != "true" ]; then
+            reason="the agent's run did not finish"
+          elif [ "$PUSH" = "skipped" ]; then
+            reason="the agent did not produce a change it is allowed to make"
+          else
+            reason="the agent's change was refused or could not be pushed"
+          fi
+          gh api --method POST "repos/$REPO/issues/$PR/labels" -f "labels[]=needs-human" > /dev/null
+          # It is no longer ready, if it ever was.
+          gh api --method DELETE "repos/$REPO/issues/$PR/labels/ready-for-review" > /dev/null 2>&1 || true
+          body="The factory agent has stopped working on this pull request: $reason. A person needs to take it from here. Details: $THIS_RUN"
+          # Quote the agent's report inside a code block, with the fence
+          # characters removed from it, so it renders as plain text.
+          note=$(printf '%s' "$NOTE" | base64 -d 2>/dev/null | tr -d '`~' | head -c 3000 || true)
+          if [ -n "$note" ]; then
+            body=$(printf '%s\n\nWhat the agent reported:\n\n~~~text\n%s\n~~~\n' "$body" "$note")
+          fi
+          gh api --method POST "repos/$REPO/issues/$PR/comments" -f body="$body" > /dev/null
+
+  # A green pull request from the agent is never left unnoticed, and never
+  # merged from here: every one goes to the owner.
+  ready:
+    name: Say it is ready
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      startsWith(github.event.workflow_run.head_branch, 'factory/issue-') &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Mint a token for the factory App
+        id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.FACTORY_APP_ID }}
+          private-key: ${{ secrets.FACTORY_APP_KEY }}
+          permission-pull-requests: write
+
+      - name: Label the pull request and tell the owner
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          REPO: ${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          CHECKS_RUN: ${{ github.event.workflow_run.html_url }}
+        run: |
+          set -euo pipefail
+          pr=$(gh api --method GET "repos/$REPO/pulls" -f state=open -f head="$OWNER:$BRANCH" \
+            | jq -c --arg bot "$FACTORY_BOT" '[.[] | select(.user.login == $bot and .user.type == "Bot")][0] // empty')
+          if [ -z "$pr" ]; then
+            echo "No open pull request from the factory for this branch."
+            exit 0
+          fi
+          number=$(jq -r .number <<<"$pr")
+          if [ "$(jq -r .head.sha <<<"$pr")" != "$HEAD_SHA" ]; then
+            echo "The branch has moved on since this run; a newer run will decide."
+            exit 0
+          fi
+          if jq -e '[.labels[].name] | index("ready-for-review")' <<<"$pr" > /dev/null; then
+            echo "Pull request #$number is already marked ready."
+            exit 0
+          fi
+          repairs=$(gh api --paginate "repos/$REPO/pulls/$number/commits" \
+            --jq '.[].commit.message | split("\n")[0]' | grep -c -F "$COMMIT_SUBJECT" || true)
+          gh api --method DELETE "repos/$REPO/issues/$number/labels/needs-human" > /dev/null 2>&1 || true
+          gh api --method POST "repos/$REPO/issues/$number/labels" -f "labels[]=ready-for-review" > /dev/null
+          gh api --method POST "repos/$REPO/issues/$number/comments" \
+            -f body="@$OWNER this pull request passes PR Checks and Smoke, after $repairs repair(s) by the agent. It is ready for you to review and merge. Passing run: $CHECKS_RUN" > /dev/null
+          echo "Announced pull request #$number as ready."

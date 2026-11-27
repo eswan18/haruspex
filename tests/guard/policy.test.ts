@@ -443,3 +443,94 @@ describe("evaluate: tool configuration inside the allowed directories", () => {
     },
   );
 });
+
+describe("evaluate: an agent allowed to add tests", () => {
+  const added = (filename: string) => file(filename, { status: "added", deletions: 0 });
+  const allowed = (files: ChangedFile[], author = FACTORY) =>
+    evaluate({ author, files, allowNewTests: true }).violations;
+
+  it.each([
+    "lib/scoring.test.ts",
+    "lib/db_actions/props.container.test.ts",
+    "components/prop-list/row.test.tsx",
+    "app/oauth/login/route.spec.ts",
+  ])("accepts the new test file %s", (path) => {
+    expect(allowed([file("lib/scoring.ts"), added(path)])).toEqual([]);
+  });
+
+  it.each(["modified", "removed", "renamed", "copied", "changed"])(
+    "rejects a test file whose status is %s",
+    (status) => {
+      expect(allowed([file("lib/scoring.test.ts", { status })])).toHaveLength(1);
+    },
+  );
+
+  it("rejects renaming an existing test, whatever the new name", () => {
+    expect(
+      allowed([
+        file("lib/new.test.ts", {
+          status: "renamed",
+          previous_filename: "lib/old.test.ts",
+        }),
+      ]),
+    ).toHaveLength(2);
+    // Even if a rename were reported as an addition.
+    expect(
+      allowed([
+        file("lib/new.test.ts", {
+          status: "added",
+          previous_filename: "lib/old.ts",
+        }),
+      ]),
+    ).toHaveLength(1);
+  });
+
+  it.each([
+    "lib/fixtures.ts",
+    "lib/mocks/db.ts",
+    "lib/__mocks__/db.test.ts",
+    "lib/test-utils.ts",
+    "components/thing.mock.ts",
+    "tests/integration/new.test.ts",
+    "e2e/new.e2e.ts",
+    "lib/migrations/x.test.ts",
+    "lib/.hidden/a.test.ts",
+    "lib/a.test.js",
+    "lib/a.test.ts.sh",
+    "vitest.config.ts",
+    "lib/vitest.setup.ts",
+    ".github/guard/x.test.ts",
+    "app/../tests/a.test.ts",
+  ])("still rejects the new file %s", (path) => {
+    expect(allowed([added(path)])).toHaveLength(1);
+  });
+
+  it("changes nothing without the flag", () => {
+    expect(
+      evaluate({ author: FACTORY, files: [added("lib/a.test.ts")] }).violations,
+    ).toHaveLength(1);
+    expect(
+      evaluate({
+        author: FACTORY,
+        files: [added("lib/a.test.ts")],
+        allowNewTests: false,
+      }).violations,
+    ).toHaveLength(1);
+  });
+
+  it("does not extend to a dependency bump", () => {
+    expect(allowed([added("lib/a.test.ts")], DEPENDABOT)).toHaveLength(1);
+  });
+
+  it("counts new tests toward the size cap", () => {
+    const violations = allowed([
+      file("lib/a.test.ts", {
+        status: "added",
+        additions: LIMITS.maxLines + 1,
+        deletions: 0,
+      }),
+    ]);
+    expect(violations).toHaveLength(1);
+    expect(violations[0]).toMatch(/lines/);
+  });
+});

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { LIMITS } from "../../.github/guard/policy";
-import { checkPatch, parseNumstat } from "../../.github/guard/patch";
+import { checkPatch, parseNumstat, parsePathList } from "../../.github/guard/patch";
 
 // `git diff --numstat -z` output: "<added>\t<deleted>\t<path>\0" per file.
 const numstat = (...rows: [string, string, string][]) =>
@@ -69,5 +69,47 @@ describe("checkPatch", () => {
 
   it("reports unreadable input as a violation instead of throwing", () => {
     expect(checkPatch("garbage\0")).toHaveLength(1);
+  });
+});
+
+describe("checkPatch with new tests allowed", () => {
+  const allow = { allowNewTests: true };
+
+  it("accepts a new test file beside the code", () => {
+    expect(
+      checkPatch(numstat(["3", "1", "lib/a.ts"], ["20", "0", "lib/a.test.ts"]), {
+        ...allow,
+        added: ["lib/a.test.ts"],
+      }),
+    ).toEqual([]);
+  });
+
+  it("still rejects a change to a test that already exists", () => {
+    expect(checkPatch(numstat(["1", "1", "lib/a.test.ts"]), allow)).toHaveLength(1);
+    expect(
+      checkPatch(numstat(["0", "9", "lib/a.test.ts"]), { ...allow, added: [] }),
+    ).toHaveLength(1);
+  });
+
+  it("rejects a new test file unless tests are allowed", () => {
+    expect(
+      checkPatch(numstat(["20", "0", "lib/a.test.ts"]), { added: ["lib/a.test.ts"] }),
+    ).toHaveLength(1);
+  });
+
+  it("matches added paths exactly", () => {
+    expect(
+      checkPatch(numstat(["1", "1", "lib/a.test.ts"]), {
+        ...allow,
+        added: ["lib/a.test.ts "],
+      }),
+    ).toHaveLength(1);
+  });
+});
+
+describe("parsePathList", () => {
+  it("splits on NUL and keeps odd characters", () => {
+    expect(parsePathList("lib/a.ts\0lib/b c\n.ts\0")).toEqual(["lib/a.ts", "lib/b c\n.ts"]);
+    expect(parsePathList("")).toEqual([]);
   });
 });
