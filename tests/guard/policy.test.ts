@@ -423,3 +423,23 @@ describe("evaluate: only known source files inside the allowed directories", () 
     expect(verdict(FACTORY, [file(path)]).violations).toHaveLength(1);
   });
 });
+
+describe("evaluate: tool configuration inside the allowed directories", () => {
+  it.each([
+    ["lib/eslint.config.ts"],
+    ["app/postcss.config.ts"],
+    ["components/vitest.config.ts"],
+    ["lib/vitest.workspace.ts"],
+    ["lib/vitest.setup.ts"],
+    ["app/tailwind.config.ts"],
+  ])("blocks %s", (path) => {
+    expect(verdict(FACTORY, [file(path)]).violations).toHaveLength(1);
+  });
+
+  it.each([["lib/config.ts"], ["lib/setup.ts"], ["app/config/page.tsx"]])(
+    "still allows ordinary source named like %s",
+    (path) => {
+      expect(verdict(FACTORY, [file(path)]).violations).toEqual([]);
+    },
+  );
+});

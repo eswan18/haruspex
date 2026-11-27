@@ -127,6 +127,10 @@ function isSourceFile(path: string): boolean {
     .some((part) => part.startsWith(".") && !ALLOWED_DOT_DIRS.includes(part));
   if (hidden) return false;
   if (!SOURCE_EXTENSIONS.some((ext) => path.endsWith(ext))) return false;
+  // Tool configuration is not source, whatever directory it sits in. Some
+  // tools look for theirs beside the file they are processing.
+  const name = path.slice(path.lastIndexOf("/") + 1);
+  if (/\.(config|workspace|setup)\.[^.]+$/.test(name)) return false;
   if (BLOCKED_DIRS.some((dir) => path.startsWith(dir))) return false;
   if (isTestFile(path)) return false;
   return (
