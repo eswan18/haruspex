@@ -16,10 +16,23 @@ describe("parseNumstat", () => {
     ]);
   });
 
-  it("keeps odd characters in a path intact", () => {
-    const [entry] = parseNumstat(numstat(["1", "1", "lib/a b\tc\n.ts"]));
-    expect(entry.filename).toBe("lib/a b\tc\n.ts");
+  it("keeps spaces and quotes in a path intact", () => {
+    const [entry] = parseNumstat(numstat(["1", "1", 'lib/a b "c".ts']));
+    expect(entry.filename).toBe('lib/a b "c".ts');
   });
+
+  it.each(["\n", "\r", "\t", "\x1b", "\x7f"])(
+    "rejects a path containing %j without repeating it",
+    (char) => {
+      const path = `lib/a${char}::error::x.ts`;
+      expect(() => parseNumstat(numstat(["1", "1", path]))).toThrow(
+        /control character/,
+      );
+      expect(checkPatch(numstat(["1", "1", path]))).toEqual([
+        "A file name contains a control character",
+      ]);
+    },
+  );
 
   it("returns nothing for an empty diff", () => {
     expect(parseNumstat("")).toEqual([]);

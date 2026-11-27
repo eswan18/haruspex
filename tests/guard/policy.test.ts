@@ -492,6 +492,7 @@ describe("evaluate: an agent allowed to add tests", () => {
     "lib/test-utils.ts",
     "components/thing.mock.ts",
     "tests/integration/new.test.ts",
+    "lib/node_modules/zod/index.test.ts",
     "e2e/new.e2e.ts",
     "lib/migrations/x.test.ts",
     "lib/.hidden/a.test.ts",
@@ -532,5 +533,15 @@ describe("evaluate: an agent allowed to add tests", () => {
     ]);
     expect(violations).toHaveLength(1);
     expect(violations[0]).toMatch(/lines/);
+  });
+});
+
+describe("evaluate: a node_modules directory inside the source tree", () => {
+  it.each([
+    "lib/node_modules/zod/index.ts",
+    "app/node_modules/react/index.tsx",
+    "components/ui/node_modules/x/y.ts",
+  ])("rejects %s", (path) => {
+    expect(verdict(FACTORY, [file(path, { status: "added" })]).violations).toHaveLength(1);
   });
 });

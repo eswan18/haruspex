@@ -136,6 +136,9 @@ function isAppPath(path: string): boolean {
     .split("/")
     .some((part) => part.startsWith(".") && !ALLOWED_DOT_DIRS.includes(part));
   if (hidden) return false;
+  // A nested node_modules would be picked up ahead of the real package by
+  // anything importing from beside it: a dependency change by another name.
+  if (path.split("/").includes("node_modules")) return false;
   if (!SOURCE_EXTENSIONS.some((ext) => path.endsWith(ext))) return false;
   // Tool configuration is not source, whatever directory it sits in. Some
   // tools look for theirs beside the file they are processing.

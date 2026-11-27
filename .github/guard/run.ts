@@ -135,7 +135,12 @@ async function fileAt(fullName: string, sha: string, path: string) {
 }
 
 function report(lines: string[]): void {
-  const text = lines.join("\n");
+  // File names and logins come from the pull request. With control
+  // characters replaced, none of them can start a line of its own, which is
+  // where the runner looks for commands.
+  const text = lines
+    .map((line) => line.replace(/[\x00-\x1f\x7f]/g, "?"))
+    .join("\n");
   console.log(text);
   const summary = process.env.GITHUB_STEP_SUMMARY;
   if (summary) appendFileSync(summary, `${text}\n`);

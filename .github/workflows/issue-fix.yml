@@ -23,7 +23,9 @@ on:
 permissions: {}
 
 concurrency:
-  group: issue-fix-${{ github.event.workflow_run.head_branch }}
+  # The repository is part of the group so that a fork's branch of the same
+  # name cannot displace a queued run.
+  group: issue-fix-${{ github.event.workflow_run.head_repository.full_name }}-${{ github.event.workflow_run.head_branch }}
   cancel-in-progress: false
 
 env:

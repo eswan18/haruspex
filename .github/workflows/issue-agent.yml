@@ -31,7 +31,9 @@ on:
 permissions: {}
 
 concurrency:
-  group: issue-agent-${{ github.event.issue.number }}
+  # The label is part of the group so that some other label going on the
+  # issue cannot displace a queued run.
+  group: issue-agent-${{ github.event.issue.number }}-${{ github.event.label.name }}
   cancel-in-progress: false
 
 jobs:

@@ -20,6 +20,12 @@ export function parseNumstat(text: string): ChangedFile[] {
       const match = /^(\d+|-)\t(\d+|-)\t([\s\S]+)$/.exec(record);
       if (!match) throw new Error("Unrecognised numstat record");
       const [, added, deleted, filename] = match;
+      // No real source file has one, and the name is about to be printed in
+      // a log where a line break could start a command to the runner. The
+      // message deliberately does not repeat the name.
+      if (/[\x00-\x1f\x7f]/.test(filename)) {
+        throw new Error("A file name contains a control character");
+      }
       if (added === "-" || deleted === "-") {
         throw new Error(`${filename}: binary files are not allowed`);
       }
