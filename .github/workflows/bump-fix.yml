@@ -186,6 +186,10 @@ jobs:
             echo "::error::The CLAUDE_CODE_OAUTH_TOKEN secret is not set."
             exit 1
           fi
+          # The runner's shell stops at the first failing command. From here
+          # on nothing may do that: the agent's exit status has to be read and
+          # its report shown, and the step ends with that status.
+          set +e
           claude -p "$PROMPT" \
             --restricted --safe-mode --strict-mcp-config \
             --tools "Read,Grep,Glob,Edit" \
@@ -196,9 +200,12 @@ jobs:
             --output-format json > "$RUNNER_TEMP/agent.json" 2> "$RUNNER_TEMP/agent.err"
           status=$?
           if [ "$status" -ne 0 ]; then
-            echo "::error::Claude Code exited with status $status."
-            echo "--- stderr"; head -c 4000 "$RUNNER_TEMP/agent.err"
-            echo "--- stdout"; head -c 4000 "$RUNNER_TEMP/agent.json"
+            # An API failure exits non-zero with nothing on stderr; the reason
+            # is in the JSON result.
+            reason=$(jq -r '"\(.terminal_reason // "unknown"): \(.api_error_status // "") \(.api_error_type // "") \(.result // "")"' \
+              "$RUNNER_TEMP/agent.json" 2>/dev/null | head -c 600 || true)
+            echo "::error::Claude Code exited with status $status. ${reason:-No result was written.}"
+            head -c 2000 "$RUNNER_TEMP/agent.err" || true
           fi
           {
             echo "### Agent report (exit $status)"
