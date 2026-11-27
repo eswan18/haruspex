@@ -19,7 +19,13 @@ export function safeReturnPath(
     const base = new URL(baseUrl);
     const target = new URL(returnUrl, base);
     if (target.origin !== base.origin) return "/";
-    return `${target.pathname}${target.search}${target.hash}`;
+
+    // Check the string that will be used, not only the parsed input: a path
+    // like "/.//evil.example" normalises to "//evil.example", which is
+    // same-origin here but another site once it is resolved again.
+    const path = `${target.pathname}${target.search}${target.hash}`;
+    if (new URL(path, base).origin !== base.origin) return "/";
+    return path;
   } catch {
     return "/";
   }
