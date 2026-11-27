@@ -14,7 +14,7 @@ merging without a person waits for the staging smoke test in step 5.
 - The agent's change is checked against the guard rules before it is
   committed, and again by the required Guard check afterwards.
 - Failing checks get up to three repair rounds, then `needs-human`.
-- A second label, `factory-tests`, lets the change bring new tests.
+- The change may bring new tests, at the agent's judgment.
 
 ## Non-goals
 
@@ -64,13 +64,15 @@ run that stops early yields no patch.
 `.github/guard/apply-patch.sh` from the default branch, commits as the App,
 pushes `factory/issue-<n>`, opens the pull request with `Closes #<n>`.
 
-**Tests.** `factory-tests` counts only if its most recent add was made by the
-owner from a `User` account (`.github/guard/issue.ts`, read from the issue's
-event history). With it, a file may be allowed if it is *added*, sits in the
-application directories, and is named `*.test.ts(x)` or `*.spec.ts(x)`.
-Modified, renamed, copied or removed test files stay blocked, as do fixtures,
-mocks and helpers. Guard finds the issue from the branch name, which only the
-push job can set. The check is always made against the commit the branch left
+**Tests.** A pull request written from an issue may add test files: a file
+is allowed if it is *added*, sits in the application directories, and is
+named `*.test.ts(x)` or `*.spec.ts(x)`. Modified, renamed, copied or removed
+test files stay blocked, as do fixtures, mocks and helpers. Guard recognises
+these pull requests by the branch name, which only the push job sets. The
+agent decides whether a change merits a test. This first shipped behind a
+second owner-applied label, `factory-tests`; it was removed the same day,
+because "new files only" already rules out weakening a test and the label
+was easy to forget. Repairs to dependency bumps still may not add tests. The check is always made against the commit the branch left
 the default branch at, so a test the agent added in round one can be corrected
 in round two but an older one cannot.
 
@@ -86,9 +88,7 @@ token, because the App has no issues permission and should not gain one.
 - First attempts get 60 turns; repairs keep 30. The handoff's 30 was sized
   for repairs, and a first attempt has to read the codebase.
 - New tests count toward the 400-line cap.
-- Removing `factory-tests` after the pull request exists makes later repairs
-  and Guard refuse it, since the pull request then holds a test it may not.
-- Labels `factory`, `factory-tests`; branch `factory/issue-<n>`.
+- Label `factory`; branch `factory/issue-<n>`.
 
 ## Left for later
 

@@ -7,13 +7,12 @@ name: Issue Agent
 # wrote. The repository is public, so anyone can file an issue; nobody else's
 # words reach the agent, and it is never shown the comments.
 #
-# The label `factory-tests`, also applied by the owner, lets the pull request
-# add new test files (.github/guard/issue.ts). Without it the agent may not
-# touch tests at all, and with it existing tests still cannot be changed.
+# The agent may add new test files and decides for itself whether the change
+# merits one. It cannot edit, rename or delete a test that already exists.
 #
 # The work is split so that no job holds both the AI and the power to push:
 #
-#   start     Decides whether to go ahead and whether tests are allowed.
+#   start     Decides whether to go ahead.
 #   propose   Runs the agent (factory-agent.yml). Its only product is a patch.
 #   push      Runs no AI and none of the agent's code. Checks the patch against
 #             .github/guard, commits it to factory/issue-<n> as the factory
@@ -50,31 +49,15 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
-      issues: read
     outputs:
       proceed: ${{ steps.decide.outputs.proceed }}
-      allow_new_tests: ${{ steps.decide.outputs.allow_new_tests }}
     steps:
-      - name: Checkout the guard
-        uses: actions/checkout@v7
-        with:
-          sparse-checkout: .github/guard
-          persist-credentials: false
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: "24"
-
-      - name: Check for an earlier attempt and for the tests label
+      - name: Check for an earlier attempt
         id: decide
         env:
           GH_TOKEN: ${{ github.token }}
-          GITHUB_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          GUARD_REPO: ${{ github.repository }}
           ISSUE: ${{ github.event.issue.number }}
-          GUARD_ISSUE_NUMBER: ${{ github.event.issue.number }}
         run: |
           set -euo pipefail
           branch="factory/issue-$ISSUE"
@@ -87,9 +70,6 @@ jobs:
             exit 0
           fi
           echo "proceed=true" >> "$GITHUB_OUTPUT"
-          allow=$(node .github/guard/issue-allows-tests.ts)
-          echo "New test files allowed: $allow"
-          echo "allow_new_tests=$allow" >> "$GITHUB_OUTPUT"
 
   propose:
     name: Propose a change
@@ -103,7 +83,7 @@ jobs:
     with:
       ref: ${{ github.sha }}
       issue_number: ${{ github.event.issue.number }}
-      allow_new_tests: ${{ needs.start.outputs.allow_new_tests == 'true' }}
+      allow_new_tests: true
       # A first attempt reads much more of the codebase than a repair, which
       # keeps the default of 30.
       max_turns: 60
@@ -159,7 +139,7 @@ jobs:
           APP_SLUG: ${{ steps.app.outputs.app-slug }}
           PATCH: ${{ needs.propose.outputs.patch }}
           BASE_SHA: ${{ github.sha }}
-          ALLOW_NEW_TESTS: ${{ needs.start.outputs.allow_new_tests }}
+          ALLOW_NEW_TESTS: "true"
           ISSUE: ${{ github.event.issue.number }}
           COMMIT_SUBJECT: "Implement issue #${{ github.event.issue.number }}"
           COMMIT_BODY: "Written by the factory agent. Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
@@ -179,19 +159,13 @@ jobs:
           REPO: ${{ github.repository }}
           BASE: ${{ github.event.repository.default_branch }}
           ISSUE: ${{ github.event.issue.number }}
-          ALLOW_NEW_TESTS: ${{ needs.start.outputs.allow_new_tests }}
           NOTE: ${{ needs.propose.outputs.note }}
           THIS_RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
           title=$(GH_TOKEN="$READ_TOKEN" gh api "repos/$REPO/issues/$ISSUE" --jq .title | head -c 200)
-          if [ "$ALLOW_NEW_TESTS" = "true" ]; then
-            tests="It was allowed to add new test files."
-          else
-            tests="It was not allowed to add or change tests."
-          fi
-          body=$(printf 'Closes #%s.\n\nWritten by the factory agent from that issue. %s Nothing here has been run by the agent: the checks on this pull request are the first time the code executes. Run: %s\n' \
-            "$ISSUE" "$tests" "$THIS_RUN")
+          body=$(printf 'Closes #%s.\n\nWritten by the factory agent from that issue. It may add new test files but cannot change existing ones. Nothing here has been run by the agent: the checks on this pull request are the first time the code executes. Run: %s\n' \
+            "$ISSUE" "$THIS_RUN")
           # The agent's report goes inside a code block, with the fence
           # characters removed from it, so it renders as plain text: no
           # mentions, links or formatting of its own.

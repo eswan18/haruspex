@@ -29,7 +29,7 @@ on:
         type: string
         default: ""
       allow_new_tests:
-        description: Whether the issue's owner allowed new test files.
+        description: Whether the change may add new test files.
         type: boolean
         default: false
       max_turns:
@@ -217,10 +217,12 @@ jobs:
             read.
           PROMPT_TESTS_YES: |
             You may add new test files beside the code they cover, named
-            `*.test.ts` or `*.test.tsx`, and should add tests for the
-            behaviour you change. Tests that existed before this branch, and
-            all fixtures, mocks and shared test helpers, may not be edited,
-            renamed or deleted.
+            `*.test.ts` or `*.test.tsx`. Whether to is your call: add one
+            when the change has behaviour worth pinning, such as a bug fix
+            or a new rule, and not for the sake of it. Tests that existed
+            before this branch, and all fixtures, mocks and shared test
+            helpers, may not be edited, renamed or deleted, so a new test
+            goes in a new file.
           PROMPT_TESTS_NO: |
             Tests, fixtures and mocks are off-limits, both existing ones and
             new ones.
