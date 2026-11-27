@@ -442,8 +442,8 @@ jobs:
   # Merging without a person is limited to one class of change, and is off
   # unless the repository variable FACTORY_AUTOMERGE_BUMPS is "true":
   #
-  #   - every commit is Dependabot's own, with a verified signature
-  #     (so the agent has not touched it),
+  #   - every commit is Dependabot's own: authored by it, committed and
+  #     signed by GitHub (so neither the agent nor anyone else has touched it),
   #   - only package.json and the lockfile changed,
   #   - every direct dependency moved by a minor or patch version
   #     (.github/guard/bump.ts, judged from the files, not from the PR title),
@@ -539,7 +539,16 @@ jobs:
           # From here the question is whether it may merge without a person.
           # Each test that fails becomes the reason given in the notice.
           why_not=""
-          if ! jq -e 'length > 0 and all(.[]; .author.login == "dependabot[bot]" and .author.type == "Bot" and .commit.verification.verified == true)' <<<"$commits" > /dev/null; then
+          # A Dependabot commit is authored by dependabot[bot], committed by
+          # GitHub itself (web-flow) and signed with GitHub's key. The author
+          # alone is a claim anyone can make; the committer and signature are
+          # what GitHub vouches for, and a commit signed by anyone else's key
+          # would have that person as its committer.
+          if ! jq -e 'length > 0 and all(.[];
+                .author.login == "dependabot[bot]" and .author.type == "Bot"
+                and .committer.login == "web-flow"
+                and .commit.verification.verified == true
+                and .commit.verification.reason == "valid")' <<<"$commits" > /dev/null; then
             why_not="Not every commit is a verified Dependabot commit."
           fi
           if [ -z "$why_not" ]; then
