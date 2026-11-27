@@ -188,6 +188,9 @@ jobs:
             echo "::error::The CLAUDE_CODE_OAUTH_TOKEN secret is not set."
             exit 1
           fi
+          # Anything the agent wrote is printed through this. A line beginning
+          # "::" is a command to the runner; prefixed, it is only text.
+          quote() { sed 's/^/> /'; echo; }
           # The runner's shell stops at the first failing command. From here
           # on nothing may do that: the agent's exit status has to be read and
           # its report shown, and the step ends with that status.
@@ -204,10 +207,10 @@ jobs:
           if [ "$status" -ne 0 ]; then
             # An API failure exits non-zero with nothing on stderr; the reason
             # is in the JSON result.
-            reason=$(jq -r '"\(.terminal_reason // "unknown"): \(.api_error_status // "") \(.api_error_type // "") \(.result // "")"' \
-              "$RUNNER_TEMP/agent.json" 2>/dev/null | head -c 600 || true)
-            echo "::error::Claude Code exited with status $status. ${reason:-No result was written.}"
-            head -c 2000 "$RUNNER_TEMP/agent.err" || true
+            echo "::error::Claude Code exited with status $status. The reason follows."
+            jq -r '"\(.terminal_reason // "unknown"): \(.api_error_status // "") \(.api_error_type // "") \(.result // "")"' \
+              "$RUNNER_TEMP/agent.json" 2>/dev/null | head -c 600 | quote
+            head -c 2000 "$RUNNER_TEMP/agent.err" | quote
           fi
           {
             echo "### Agent report (exit $status)"
@@ -221,8 +224,7 @@ jobs:
           # base64-encoded so it cannot be read as anything but data.
           jq -r '.result // ""' "$RUNNER_TEMP/agent.json" 2>/dev/null | head -c 1500 > "$RUNNER_TEMP/note.txt"
           echo "--- Agent's report:"
-          cat "$RUNNER_TEMP/note.txt"
-          echo
+          quote < "$RUNNER_TEMP/note.txt"
           echo "note=$(base64 -w0 "$RUNNER_TEMP/note.txt")" >> "$GITHUB_OUTPUT"
           exit "$status"
 
