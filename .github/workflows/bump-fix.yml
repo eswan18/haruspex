@@ -2,7 +2,8 @@ name: Bump Fix
 
 # When PR Checks fails on a Dependabot pull request, let the factory agent try
 # to repair the code that the new versions broke. Up to MAX_ROUNDS attempts,
-# then it hands the pull request to a person.
+# then it hands the pull request to a person by labelling it needs-human. It
+# does not touch a pull request that already has that label.
 #
 # The work is split so that no job holds both the AI and the power to push:
 #
@@ -77,6 +78,15 @@ jobs:
             exit 0
           fi
           number=$(jq -r .number <<<"$pr")
+          # Once handed to a person, stay out. The round count below only
+          # sees fix commits, so without this a pull request the agent cannot
+          # fix would start a new agent run every time its checks fail again.
+          # Removing the label lets the agent try again.
+          if jq -e '[.labels[].name] | index("needs-human")' <<<"$pr" > /dev/null; then
+            echo "Pull request #$number is labelled needs-human; leaving it alone."
+            echo "give_up=skip" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           if [ "$(jq -r .head.sha <<<"$pr")" != "$HEAD_SHA" ]; then
             echo "The branch has moved on since this run; a newer run will handle it."
             echo "give_up=skip" >> "$GITHUB_OUTPUT"
