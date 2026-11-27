@@ -6,8 +6,9 @@
  * with a clear, actionable error — when code is deployed against a database
  * that hasn't been migrated, rather than silently serving against a schema the
  * code doesn't expect and failing much later, at runtime, on whichever query
- * first touches a missing column. Applying migrations stays a separate,
- * deliberate act (`npm exec kysely migrate up`).
+ * first touches a missing column. Applying migrations is a separate step: the
+ * `migrate` initContainer does it on deploy in staging, prod and previews
+ * (`./runner`), and `npm exec kysely migrate up` anywhere else.
  *
  * The motivating case is bifrost preview environments: a preview gets its own
  * Neon database branch cut from staging's schema, so a branch that adds a
@@ -104,10 +105,13 @@ export function compareMigrations(
 
   sections.push(
     "",
-    "  Fix: run the migrations against this database —",
+    "  Fix: migrate this database. Staging and prod do that on deploy, in the",
+    "  pod's `migrate` initContainer, so look there first:",
+    "    kubectl logs <pod> -c migrate",
+    "  Anywhere else, run the migrations yourself:",
     "    DATABASE_URL='...' npm exec kysely migrate up",
     "  If the database is ahead instead, deploy the build that matches it.",
-    "  This check never applies migrations itself; that stays a deliberate step.",
+    "  This check never applies migrations itself.",
   );
 
   return { ok: false, message: sections.join("\n") };

@@ -68,6 +68,14 @@ describe("compareMigrations", () => {
     expect(message).toContain("npm exec kysely migrate up");
   });
 
+  it("points a deployed environment at the migrate initContainer", () => {
+    // Staging and prod migrate on deploy, so a database still behind there
+    // means that initContainer failed or never ran; its logs say why.
+    const message = messageOf(compareMigrations([A, B], [A]));
+
+    expect(message).toContain("kubectl logs <pod> -c migrate");
+  });
+
   it("says it does not apply migrations itself", () => {
     const message = messageOf(compareMigrations([A, B], [A]));
 

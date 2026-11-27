@@ -183,7 +183,10 @@ describe.skipIf(!useContainers)("the compiled migration runner, end to end", () 
     });
 
     expect(result.code).not.toBe(0);
-    expect(result.stderr).toContain("Migration failed");
+    // Said as what it is: an older image, not a failed migration.
+    expect(result.stderr).toContain("ahead of this build");
+    expect(result.stderr).toContain("9999999999999_from-a-newer-build");
+    expect(result.stderr).not.toContain("Migration failed");
   }, 300000);
 
   it("exits non-zero when a migration cannot be applied", async () => {
@@ -200,6 +203,8 @@ describe.skipIf(!useContainers)("the compiled migration runner, end to end", () 
 
     expect(result.code).toBe(1);
     expect(result.stderr).toContain("Migration failed");
+    // kysely runs the whole batch in one transaction on Postgres.
+    expect(result.stderr).toContain("rolled back");
     expect(result.stdout).toContain("Error");
   }, 300000);
 

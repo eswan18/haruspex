@@ -7,6 +7,44 @@ spec:
   template:
     spec:
       serviceAccountName: haruspex-prod-ksa
+      # Brings the database to this build's schema before the app starts, so a
+      # deploy needs no manual migration. It runs the runner compiled into the
+      # image (see the README's "Applying migrations from inside the image"),
+      # which exits 0 only when every migration applied and the startup check
+      # then passes; a failed run holds this pod in Init while the old pods
+      # keep serving.
+      #
+      # The image name matches the app container's, so ArgoCD's kustomize
+      # image override replaces both and a build only ever applies its own
+      # migrations. It connects as the database owner (the app runs as
+      # app_user), from a volume only this container mounts. It lives here,
+      # not in the base, because bifrost builds previews from the base and
+      # adds its own `migrate` initContainer.
+      initContainers:
+        - name: migrate
+          image: us-central1-docker.pkg.dev/ethans-services/containers/haruspex:override-required
+          command: ["node", "/app/migrate/index.js"]
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "5m"
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1001
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: migrate-secrets
+              mountPath: "/mnt/migrate"
+              readOnly: true
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: haruspex-prod-migrate-secrets
+                  key: DATABASE_URL
       containers:
         - name: haruspex
           envFrom:
@@ -47,3 +85,9 @@ spec:
             readOnly: true
             volumeAttributes:
               secretProviderClass: haruspex-prod-secrets
+        - name: migrate-secrets
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: haruspex-prod-migrate-secrets

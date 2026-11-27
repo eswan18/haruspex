@@ -3,8 +3,9 @@
  *
  * This is the counterpart to the startup check in `./check`. The check refuses
  * to start an app whose database is not at the build's schema; *something* has
- * to be able to move a database to that schema, and in bifrost preview
- * environments that something is an initContainer running the app image.
+ * to be able to move a database to that schema, and in staging, prod and bifrost
+ * preview environments that something is a `migrate` initContainer running the
+ * app image.
  *
  * The runner stage carries neither `kysely-ctl` nor `tsx`, so `npm exec kysely
  * migrate up` — the way migrations are run by hand — cannot work there: the
@@ -174,6 +175,43 @@ export function checkCompiledSet(names: readonly string[]): string | null {
   return lines.join("\n");
 }
 
+/**
+ * The migration a database has applied that this build lacks, when that is why
+ * kysely refused to run, or null for any other failure. kysely checks this
+ * before applying anything, so the database is untouched.
+ */
+function databaseAheadOf(error: unknown): string | null {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    /previously executed migration (\S+) is missing/.exec(message)?.[1] ?? null
+  );
+}
+
+/**
+ * Why `connectionString` cannot be migrated through, or null if it can.
+ *
+ * kysely holds a session-level advisory lock for the whole run, so that two
+ * pods starting together apply each migration once. Neon's pooled host
+ * (`-pooler`) is PgBouncer in transaction mode, which does not keep a session's
+ * locks: the lock and its release can land on different server connections, and
+ * a leaked lock then blocks every later run. Neon's consoles show the pooled
+ * string by default, which is what makes this worth refusing outright.
+ */
+export function unusableConnection(connectionString: string): string | null {
+  let host: string;
+  try {
+    host = new URL(connectionString).hostname;
+  } catch {
+    return null;
+  }
+  if (!host.includes("-pooler")) return null;
+  return [
+    `Refusing to migrate through ${host}: that is Neon's pooled host, which`,
+    "cannot hold the session lock kysely takes for the run. Use the direct",
+    "connection string (the same host without `-pooler`).",
+  ].join("\n");
+}
+
 function formatResult(result: MigrationResult): string {
   return `  ${result.status.padEnd(11)} ${result.migrationName}`;
 }
@@ -213,11 +251,27 @@ export async function runMigrations(
   }
 
   if (error) {
+    const ahead = databaseAheadOf(error);
+    if (ahead !== null) {
+      io.error(
+        [
+          "The database is ahead of this build: it has already applied",
+          `${ahead}, which this image does not know. Nothing was changed.`,
+          "",
+          "  This is an older image starting against a database a newer build",
+          "  migrated: a rollback, or an old pod restarted mid-rollout. The app",
+          "  would refuse to boot against it too. Roll forward to the build that",
+          "  matches the database.",
+        ].join("\n"),
+      );
+      return 1;
+    }
     const detail = error instanceof Error ? error.stack : String(error);
     io.error(
       [
-        "Migration failed. The database is left at the last migration that",
-        "succeeded; kysely applies each in its own transaction.",
+        "Migration failed. kysely runs the whole batch in one transaction on",
+        "Postgres, so every migration in this run was rolled back and the",
+        "database is as it was before the run.",
         "",
         `  ${detail}`,
       ].join("\n"),
@@ -265,11 +319,17 @@ export async function runMigrationCli(
       [
         "DATABASE_URL is not set, so there is no database to migrate.",
         "",
-        "  Set it to the database this deployment will use. In a bifrost preview",
-        "  that is the pod's own DATABASE_URL; the initContainer sees the same",
-        "  environment the app container does.",
+        "  Set it to the database this deployment will use, as a role that may",
+        "  change the schema. In a bifrost preview that is the migrate role bifrost",
+        "  mints; in staging and prod it comes from haruspex-{env}-migrate-secrets.",
       ].join("\n"),
     );
+    return 1;
+  }
+
+  const unusable = unusableConnection(connectionString);
+  if (unusable !== null) {
+    io.error(unusable);
     return 1;
   }
 
