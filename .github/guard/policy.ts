@@ -109,10 +109,24 @@ function isTestFile(path: string): boolean {
   );
 }
 
+/** The only kinds of file application source is made of here. */
+const SOURCE_EXTENSIONS = [".ts", ".tsx", ".css"];
+
+/** Dot-directories that are part of the app's URL space, not tooling. */
+const ALLOWED_DOT_DIRS = [".well-known"];
+
 function isSourceFile(path: string): boolean {
   // Refuse anything that is not a plain repo-relative path before matching
   // prefixes, so "app/../.github/x" cannot ride in on "app/".
   if (path.startsWith("/") || path.split("/").includes("..")) return false;
+  // Being inside an allowed directory is not enough. Dotfiles and anything
+  // that is not source would let a bot plant tooling config or instructions
+  // for a later agent run: lib/.gitattributes, app/CLAUDE.md, app/package.json.
+  const hidden = path
+    .split("/")
+    .some((part) => part.startsWith(".") && !ALLOWED_DOT_DIRS.includes(part));
+  if (hidden) return false;
+  if (!SOURCE_EXTENSIONS.some((ext) => path.endsWith(ext))) return false;
   if (BLOCKED_DIRS.some((dir) => path.startsWith(dir))) return false;
   if (isTestFile(path)) return false;
   return (

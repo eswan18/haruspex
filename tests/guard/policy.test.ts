@@ -386,3 +386,40 @@ describe("evaluate: test-support files", () => {
     expect(verdict(FACTORY, [file(path)]).violations).toEqual([]);
   });
 });
+
+describe("evaluate: only known source files inside the allowed directories", () => {
+  it.each([
+    ["app/globals.css"],
+    ["types/next.d.ts"],
+    ["app/.well-known/oauth-protected-resource/mcp/route.ts"],
+  ])("allows %s", (path) => {
+    expect(verdict(FACTORY, [file(path)]).violations).toEqual([]);
+  });
+
+  it.each([
+    // Instructions a later agent run would load.
+    ["app/CLAUDE.md"],
+    ["lib/AGENTS.md"],
+    ["lib/.claude/settings.json"],
+    ["components/.cursorrules"],
+    // Tooling config that changes how the code is built, linted or tested.
+    ["app/package.json"],
+    ["components/tsconfig.json"],
+    ["lib/.gitattributes"],
+    ["lib/.gitignore"],
+    ["lib/.eslintrc.json"],
+    ["lib/.env"],
+    ["app/.hidden/page.tsx"],
+    // File types the app does not have in these directories.
+    ["lib/run.sh"],
+    ["lib/data.json"],
+    ["lib/notes.md"],
+    ["app/favicon.ico"],
+    ["lib/blob"],
+    ["lib/script.js"],
+    ["lib/page.tsx.bak"],
+    ["lib/x.TS"],
+  ])("blocks %s", (path) => {
+    expect(verdict(FACTORY, [file(path)]).violations).toHaveLength(1);
+  });
+});

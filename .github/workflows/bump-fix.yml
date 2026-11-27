@@ -156,24 +156,65 @@ jobs:
             --allowedTools "Read,Edit,Grep,Glob"
             --disallowedTools "Bash,Write,NotebookEdit,WebFetch,WebSearch"
 
-      # The working tree, including .git, may have been edited by the agent.
-      # Nothing below trusts it: git's hooks and helpers are switched off, and
-      # the patch is validated from scratch in the next job.
+      # The agent's working tree, including its .git directory, is untrusted
+      # from here on: an edited .git/config could make git run a command. So no
+      # git command runs there. A second, clean checkout is made, the source
+      # files are copied across as plain data, and the diff is taken in that.
+      - name: Checkout a clean copy to diff against
+        if: steps.pr.outputs.give_up == 'false'
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          path: .factory-clean
+          persist-credentials: false
+
       - name: Collect the agent's edits as a patch
         id: patch
         if: steps.pr.outputs.give_up == 'false'
+        env:
+          # Only this repository's own config applies to the git calls below.
+          GIT_CONFIG_NOSYSTEM: "1"
+          GIT_CONFIG_GLOBAL: /dev/null
+          # Present only so the patch can be searched for it.
+          CLAUDE_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         run: |
           set -euo pipefail
-          safe_git() {
-            git -c core.hooksPath=/dev/null -c core.fsmonitor=false \
-              -c diff.external= -c core.attributesFile=/dev/null "$@"
-          }
+          clean="$GITHUB_WORKSPACE/.factory-clean"
+          for path in $SOURCE_PATHS; do
+            # A symlink in place of a source directory or file is ignored, so
+            # nothing outside the repository can be pulled into the patch.
+            if [ -L "$path" ]; then
+              echo "Ignoring $path: it is now a symlink."
+            elif [ -d "$path" ]; then
+              # -r without -l: regular files only. Git's own control files
+              # (.gitattributes and the like) are never copied.
+              rsync -r --delete --exclude='.git*' "$path/" "$clean/$path/"
+            elif [ -f "$path" ]; then
+              cp "$path" "$clean/$path"
+            else
+              rm -rf "${clean:?}/$path"
+            fi
+          done
+
+          cd "$clean"
           # shellcheck disable=SC2086
-          safe_git add -A -- $SOURCE_PATHS
-          safe_git diff --cached --no-ext-diff --no-textconv --no-color \
+          git add -A -- $SOURCE_PATHS
+          git diff --cached --no-ext-diff --no-textconv --no-color \
             --src-prefix=a/ --dst-prefix=b/ > "$RUNNER_TEMP/fix.patch"
+
           size=$(wc -c < "$RUNNER_TEMP/fix.patch")
           echo "Patch is $size bytes."
+          # A backstop, not the defence: the agent is confined to the
+          # repository so it cannot read a credential in the first place.
+          if [ -n "$CLAUDE_TOKEN" ] && grep -qF -- "$CLAUDE_TOKEN" "$RUNNER_TEMP/fix.patch"; then
+            echo "::error::The patch contains the Claude token. Discarding it; rotate the token."
+            exit 1
+          fi
+          if grep -qE 'sk-ant-[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{30,}|-----BEGIN [A-Z ]*PRIVATE KEY-----' "$RUNNER_TEMP/fix.patch"; then
+            echo "::error::The patch contains something shaped like a credential. Discarding it."
+            exit 1
+          fi
+
           if [ "$size" -eq 0 ]; then
             echo "patch=" >> "$GITHUB_OUTPUT"
           elif [ "$size" -gt 200000 ]; then
@@ -239,6 +280,14 @@ jobs:
           git apply --numstat -z "$RUNNER_TEMP/fix.patch" | node ../rules/.github/guard/check-patch.ts
           git apply --index "$RUNNER_TEMP/fix.patch"
           git diff --cached --numstat -z --no-renames | node ../rules/.github/guard/check-patch.ts
+
+          # Ordinary files only: no symlinks, submodules or executables.
+          odd_modes=$(git diff --cached --raw --no-renames | awk '$2 != "100644" && $2 != "000000"')
+          if [ -n "$odd_modes" ]; then
+            echo "Patch refused: it adds something other than an ordinary file:"
+            echo "$odd_modes"
+            exit 1
+          fi
 
           bot_id=$(gh api "/users/${APP_SLUG}[bot]" --jq .id)
           git config user.name "${APP_SLUG}[bot]"
