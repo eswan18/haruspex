@@ -4,8 +4,9 @@ name: Issue Agent
 # opens a pull request for the owner to review. Nothing here merges.
 #
 # It starts only when the owner applied the label, to an open issue the owner
-# wrote. The repository is public, so anyone can file an issue; nobody else's
-# words reach the agent, and it is never shown the comments.
+# wrote. The repository is public, so anyone can file an issue or comment on
+# one; nobody else's words reach the agent. It is shown the issue and the
+# owner's own comments on it, and no one else's.
 #
 # The agent may add new test files and decides for itself whether the change
 # merits one. It cannot edit, rename or delete a test that already exists.
