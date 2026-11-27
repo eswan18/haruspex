@@ -28,6 +28,12 @@ describe("safeReturnPath", () => {
     ["a different port", "https://haruspex.example:8443/"],
     ["a lookalike host", "https://haruspex.example.evil.example/"],
     ["userinfo before another host", "https://haruspex.example@evil.example/"],
+    // These pass a first origin check, but their path is "//evil.example",
+    // which would resolve off-site when the result is used.
+    ["a dot segment hiding a double slash", "/.//evil.example"],
+    ["a same-site URL whose path starts //", `${BASE}//evil.example`],
+    ["a same-site URL whose path starts /\\", `${BASE}/\\evil.example`],
+    ["a parent segment hiding a double slash", "/a/..//evil.example"],
     ["a javascript: URL", "javascript:alert(1)"],
     ["a data: URL", "data:text/html,<script>alert(1)</script>"],
   ])("sends %s to the home page", (_name, input) => {
@@ -47,7 +53,14 @@ describe("safeReturnPath", () => {
   });
 
   it("never returns something that resolves off-site", () => {
-    const inputs = ["//evil.example//", "/\\/evil.example", "///evil.example"];
+    const inputs = [
+      "//evil.example//",
+      "/\\/evil.example",
+      "///evil.example",
+      "/.//evil.example",
+      "/./\\evil.example",
+      `${BASE}//evil.example/path?q=1#h`,
+    ];
     for (const input of inputs) {
       const result = safeReturnPath(input, BASE);
       expect(new URL(result, BASE).origin).toBe(BASE);
