@@ -363,6 +363,15 @@ step:
   what failed. kysely runs the whole batch in one transaction on Postgres, so a failure rolls back
   every migration in that run and the database is as it was before it. (The same transaction is why
   `CREATE INDEX CONCURRENTLY` cannot go in a migration.)
+- **A migration never waits long for a table.** Changing a table needs a lock nothing else may hold,
+  and Postgres queues lock requests: while a migration waits behind one slow query, every later query
+  on that table waits behind the migration. Left alone Postgres waits forever, so one long query in
+  the app would turn a deploy into an outage of that table. The runner's connection sets
+  `lock_timeout` to 5 seconds (`LOCK_WAIT_MS` in `lib/migrations/runner.ts`): a migration that cannot
+  get its lock fails, the run rolls back, and Kubernetes starts the initContainer again. If it keeps
+  failing, something is holding the table open, and the log says how to find it. A migration that
+  really needs longer can `SET LOCAL lock_timeout` for itself. Waiting for *another runner* is not
+  shortened: when two pods start together the second waits for the first to finish.
 - **Old pods only keep serving while they live.** Once a new build has migrated, an old pod that is
   recreated — a spot preemption, an eviction — runs the old image's runner against the newer
   database. kysely refuses, the runner says the database is ahead of the build, and that pod waits in
@@ -382,9 +391,11 @@ npm run build:migrate                                    # writes dist/migrate/i
 DATABASE_URL='...' node dist/migrate/index.js
 ```
 
-That is exactly what the initContainer does. For everyday work against a local or staging database,
+That is exactly what the initContainer does. For everyday work against a local database,
 `DATABASE_URL='...' npm exec kysely migrate up` is still the shorter path and applies the same
-migrations; the compiled runner exists for the environments that have no `npm`.
+migrations; the compiled runner exists for the environments that have no `npm`. Do not migrate
+staging or prod by hand: a database migrated ahead of the build running against it is one the app
+refuses to start on, so the next pod to restart stays down until that build is deployed.
 
 ##### The one trap: `00000000_bootstrap`
 
