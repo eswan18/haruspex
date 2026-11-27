@@ -341,17 +341,14 @@ describe("GET /oauth/callback", () => {
       return callback("code=c1&state=st");
     }
 
-    it("SURPRISE: an absolute return URL is followed to the other origin (open redirect)", async () => {
-      const res = await withReturnUrl("https://evil.example/");
+    it.each([
+      ["an absolute URL on another site", "https://evil.example/"],
+      ["a protocol-relative URL", "//evil.example/"],
+      ["a backslash host", "/\\evil.example"],
+    ])("sends %s to the home page, still signed in", async (_name, value) => {
+      const res = await withReturnUrl(value);
       expect(res.status).toBe(307);
-      expect(location(res)).toBe("https://evil.example/");
-      expect(setNames()).toContain("token");
-    });
-
-    it("SURPRISE: a protocol-relative return URL is followed to the other origin (open redirect)", async () => {
-      const res = await withReturnUrl("//evil.example/");
-      expect(res.status).toBe(307);
-      expect(location(res)).toBe("https://evil.example/");
+      expect(location(res)).toBe(`${BASE}/`);
       expect(setNames()).toContain("token");
     });
 

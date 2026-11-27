@@ -86,6 +86,17 @@ describe("GET /oauth/login", () => {
     expect(cookieCall("oauth_return_url")?.[1]).toBe("/");
   });
 
+  it.each([
+    ["https://evil.example/"],
+    ["//evil.example/"],
+    ["/%5Cevil.example"],
+  ])("stores / instead of the off-site returnUrl %s", async (value) => {
+    await GET(
+      new NextRequest(`https://haruspex.test/oauth/login?returnUrl=${value}`),
+    );
+    expect(cookieCall("oauth_return_url")?.[1]).toBe("/");
+  });
+
   it("uses APP_BASE_URL for redirect_uri when set", async () => {
     vi.stubEnv("APP_BASE_URL", "https://public.example");
     await GET(new NextRequest("http://localhost:3000/oauth/login"));
