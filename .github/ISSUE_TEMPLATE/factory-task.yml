@@ -6,13 +6,13 @@ body:
     attributes:
       value: |
         Filing this starts nothing. The agent begins when the repository's
-        owner adds the `factory` label. Add `factory-tests` first if the
-        change should arrive with new tests.
+        owner adds the `factory` label.
 
         The agent can change `.ts`, `.tsx` and `.css` files under `app/`,
         `components/`, `lib/`, `hooks/` and `types/`: at most 25 files and 400
-        lines. It cannot change the database schema, dependencies,
-        configuration or existing tests, and it cannot run the app. It reads
+        lines. It may add new test files where the change merits one. It
+        cannot change the database schema, dependencies, configuration or
+        existing tests, and it cannot run the app. It reads
         this issue's title and the fields below, and none of the comments.
   - type: textarea
     id: what

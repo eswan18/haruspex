@@ -14,7 +14,7 @@
 # Env:
 #   PATCH             the patch, base64-encoded
 #   BASE_SHA          where the pull request branches off the default branch
-#   ALLOW_NEW_TESTS   "true" if the issue's owner allowed new test files
+#   ALLOW_NEW_TESTS   "true" if the change may add new test files
 #   COMMIT_SUBJECT    first line of the commit message
 #   COMMIT_BODY       the rest of it
 #   APP_SLUG          the factory App's slug; the commit is made in its name

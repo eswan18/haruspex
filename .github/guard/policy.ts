@@ -69,9 +69,9 @@ export interface GuardInput {
   /** package.json at the base and head commits, when the PR changes it. */
   packageJson?: { base: string; head: string };
   /**
-   * True when the owner has said, on the issue an agent's PR was written
-   * from, that it may bring tests (issue.ts). It lets the agent add new test
-   * files. It never lets it edit, rename or delete one that already exists.
+   * True for an agent's PR written from an issue (issue.ts). It lets the
+   * agent add new test files. It never lets it edit, rename or delete one
+   * that already exists.
    */
   allowNewTests?: boolean;
 }

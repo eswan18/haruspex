@@ -12,7 +12,7 @@ import {
   type ChangedFile,
   type GuardInput,
 } from "./policy.ts";
-import { fetchTestsAllowed, issueNumberFromBranch } from "./issue.ts";
+import { issueNumberFromBranch } from "./issue.ts";
 
 const API = "https://api.github.com";
 const PAGE_SIZE = 100;
@@ -61,20 +61,16 @@ interface PullRequest {
 }
 
 /**
- * An agent's PR may add tests when it is on a factory branch in this
- * repository and the owner labelled that branch's issue to say so. Anything
- * that goes wrong while asking leaves the answer at no.
+ * An agent's PR may add new test files when it was written from an issue:
+ * that is, when it is on a factory branch in this repository. A repair to a
+ * dependency bump may not, since a new test there could only paper over the
+ * break. Existing tests are off-limits either way (policy.ts).
  */
-async function newTestsAllowed(pr: PullRequest): Promise<boolean> {
-  if (pr.head.repo?.full_name !== repo) return false;
-  const issue = issueNumberFromBranch(pr.head.ref);
-  if (issue === null) return false;
-  try {
-    return await fetchTestsAllowed(token, repo, issue);
-  } catch (err) {
-    console.log(`Could not read issue #${issue}: ${(err as Error).message}`);
-    return false;
-  }
+function newTestsAllowed(pr: PullRequest): boolean {
+  return (
+    pr.head.repo?.full_name === repo &&
+    issueNumberFromBranch(pr.head.ref) !== null
+  );
 }
 
 async function listFiles(): Promise<ChangedFile[]> {
@@ -157,7 +153,7 @@ async function main(): Promise<number> {
     contributors,
     files,
     truncated: files.length !== pr.changed_files,
-    allowNewTests: await newTestsAllowed(pr),
+    allowNewTests: newTestsAllowed(pr),
   };
 
   if (files.some((file) => file.filename === "package.json")) {
@@ -196,7 +192,7 @@ async function main(): Promise<number> {
   }
 
   if (input.allowNewTests && kind === "agent") {
-    report(["Guard: the owner labelled the issue to allow new test files."]);
+    report(["Guard: written from an issue, so it may add new test files."]);
   }
 
   if (violations.length === 0) {
