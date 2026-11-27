@@ -32,6 +32,11 @@ describe.skipIf(!useContainers)("rolling back voided props", () => {
     await Promise.all(opened.map((db) => db.destroy()));
   });
 
+  /**
+   * A database migrated up to this migration and no further, so that
+   * `migrateDown()`, which undoes the newest applied migration, undoes this
+   * one however many have landed after it.
+   */
   async function migratedDatabase(name: string) {
     const admin = connect("postgres");
     await sql.raw(`drop database if exists ${name}`).execute(admin);
@@ -48,7 +53,7 @@ describe.skipIf(!useContainers)("rolling back voided props", () => {
         migrationFolder: path.join(process.cwd(), "migrations"),
       }),
     });
-    const { error } = await migrator.migrateToLatest();
+    const { error } = await migrator.migrateTo(MIGRATION);
     if (error) throw error;
     return { db, migrator };
   }
