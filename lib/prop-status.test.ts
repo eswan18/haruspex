@@ -225,7 +225,7 @@ describe("isOpenInCompetition", () => {
   const prop = (over: Record<string, unknown> = {}) => ({
     prop_forecasts_due_date: null,
     competition_forecasts_close_date: future,
-    resolution_voided: null,
+    resolution_id: null,
     ...over,
   });
 
@@ -249,9 +249,26 @@ describe("isOpenInCompetition", () => {
     ).toBe(true);
   });
 
+  it("is closed once resolved, even before the deadline", () => {
+    expect(isOpenInCompetition(prop({ resolution_id: 7 }), false, now)).toBe(
+      false,
+    );
+    expect(
+      isOpenInCompetition(
+        prop({ resolution_id: 7, prop_forecasts_due_date: future }),
+        true,
+        now,
+      ),
+    ).toBe(false);
+  });
+
   it("is closed once voided, even before the deadline", () => {
     expect(
-      isOpenInCompetition(prop({ resolution_voided: true }), false, now),
+      isOpenInCompetition(
+        prop({ resolution_id: 7, resolution_voided: true }),
+        false,
+        now,
+      ),
     ).toBe(false);
   });
 });

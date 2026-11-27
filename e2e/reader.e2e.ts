@@ -34,7 +34,7 @@ test.describe("reader", () => {
     );
   });
 
-  test("the open props list, unfiltered, lists both props", async ({
+  test("the open props list, unfiltered, lists the open prop and not the resolved one", async ({
     page,
   }) => {
     await page.goto(`${competitionUrl}/props/open`);
@@ -42,7 +42,8 @@ test.describe("reader", () => {
     // (the forecast check below moves the open prop out of it), so ask for All.
     await page.getByRole("button", { name: "All", exact: true }).click();
     await expect(page.getByText(seed.openProp.text)).toBeVisible();
-    await expect(page.getByText(seed.resolvedProp.text)).toBeVisible();
+    // Resolved before the season's deadline: settled, so no longer open.
+    await expect(page.getByText(seed.resolvedProp.text)).toHaveCount(0);
   });
 
   test("resolved props lists the resolved prop and not the open one", async ({

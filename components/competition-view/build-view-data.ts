@@ -58,8 +58,8 @@ export function buildViewData({
 }): CompetitionViewData {
   const isPrivate = competition.is_private;
 
-  // A void is settled even before its deadline, so it is neither open nor
-  // owed; the open-props page applies the same rule.
+  // A resolved or voided prop is settled even before its deadline, so it is
+  // neither open nor owed; the open-props page applies the same rule.
   const isOpen = (p: PropWithUserForecast) =>
     isOpenInCompetition(p, isPrivate, now);
   const isResolved = (p: PropWithUserForecast) => p.resolution_id !== null;

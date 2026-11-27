@@ -80,6 +80,20 @@ describe("buildViewData", () => {
       });
     });
 
+    it("counts a prop resolved before its deadline as resolved, not open", () => {
+      const data = build({
+        props: [
+          prop({ competition_forecasts_close_date: day(5), resolution_id: 3 }),
+        ],
+      });
+      expect(data.counts).toMatchObject({
+        open: 0,
+        unresolved: 0,
+        resolved: 1,
+      });
+      expect(data.counts.toForecast).toBe(0);
+    });
+
     it("counts a voided prop as resolved, not open, before its deadline", () => {
       const data = build({
         props: [
