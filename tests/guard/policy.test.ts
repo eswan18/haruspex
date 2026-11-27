@@ -306,3 +306,83 @@ describe("packageJsonViolations", () => {
     expect(packageJsonViolations("null", JSON.stringify(base))).toHaveLength(1);
   });
 });
+
+describe("evaluate: bots working on someone else's PR", () => {
+  const WEB_FLOW = { login: "web-flow", type: "User" };
+
+  it("applies bot rules when a bot contributed to a person's PR", () => {
+    const result = evaluate({
+      author: HUMAN,
+      contributors: [HUMAN, WEB_FLOW, FACTORY],
+      files: [file("app/page.tsx"), file("lib/x.test.ts")],
+    });
+    expect(result.kind).toBe("agent");
+    expect(result.violations).toHaveLength(1);
+  });
+
+  it("still passes a person's PR when every contributor is a person", () => {
+    const result = evaluate({
+      author: HUMAN,
+      contributors: [HUMAN, WEB_FLOW],
+      files: [file(".github/workflows/pr-checks.yml")],
+    });
+    expect(result).toEqual({ kind: "human", violations: [] });
+  });
+
+  it("applies bot rules when a contributor could not be identified", () => {
+    const result = evaluate({
+      author: HUMAN,
+      contributors: [HUMAN, null],
+      files: [file("Dockerfile")],
+    });
+    expect(result.kind).toBe("agent");
+    expect(result.violations).toHaveLength(1);
+  });
+
+  it("does not give a person's PR the bump bot's package.json allowance", () => {
+    const result = evaluate({
+      author: HUMAN,
+      contributors: [HUMAN, DEPENDABOT],
+      files: [file("package.json")],
+      packageJson: { base: "{}", head: "{}" },
+    });
+    expect(result.kind).toBe("agent");
+    expect(result.violations).toHaveLength(1);
+  });
+
+  it("keeps bump rules when an agent pushes a fix to a Dependabot PR", () => {
+    const result = evaluate({
+      author: DEPENDABOT,
+      contributors: [DEPENDABOT, FACTORY],
+      files: [file("package.json"), file("lib/call-site.ts")],
+      packageJson: { base: "{}", head: "{}" },
+    });
+    expect(result).toEqual({ kind: "bump-bot", violations: [] });
+  });
+});
+
+describe("evaluate: test-support files", () => {
+  it.each([
+    ["components/prop-list/fixtures.ts"],
+    ["components/standings/standings.fixtures.ts"],
+    ["lib/thing.fixture.ts"],
+    ["lib/__fixtures__/data.json"],
+    ["lib/__mocks__/db.ts"],
+    ["lib/db.mock.ts"],
+    ["lib/mocks/idp.ts"],
+    ["lib/test-utils.ts"],
+    ["lib/test-utils/render.tsx"],
+    ["app/testing/helpers.ts"],
+  ])("blocks %s", (path) => {
+    expect(verdict(FACTORY, [file(path)]).violations).toHaveLength(1);
+  });
+
+  it.each([
+    ["lib/latest-results.ts"],
+    ["components/testimonial.tsx"],
+    ["lib/mockingbird.ts"],
+    ["app/contest/page.tsx"],
+  ])("does not mistake %s for one", (path) => {
+    expect(verdict(FACTORY, [file(path)]).violations).toEqual([]);
+  });
+});

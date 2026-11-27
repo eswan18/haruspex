@@ -46,3 +46,6 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           GUARD_REPO: ${{ github.repository }}
           GUARD_PR_NUMBER: ${{ github.event.pull_request.number }}
+          # Who triggered this run, as recorded by GitHub.
+          GUARD_SENDER_LOGIN: ${{ github.event.sender.login }}
+          GUARD_SENDER_TYPE: ${{ github.event.sender.type }}

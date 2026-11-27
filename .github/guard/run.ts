@@ -7,8 +7,8 @@
  */
 import { appendFileSync } from "node:fs";
 import {
-  classifyAuthor,
   evaluate,
+  type Author,
   type ChangedFile,
   type GuardInput,
 } from "./policy.ts";
@@ -17,6 +17,8 @@ const API = "https://api.github.com";
 const PAGE_SIZE = 100;
 // GitHub lists at most 3000 files for a pull request.
 const MAX_PAGES = 30;
+// ...and at most 250 commits.
+const MAX_COMMITS = 250;
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -69,6 +71,43 @@ async function listFiles(): Promise<ChangedFile[]> {
   return files;
 }
 
+interface PullRequestCommit {
+  author: Author | null;
+  committer: Author | null;
+}
+
+/**
+ * Each commit's author and committer, plus whoever triggered this run. The
+ * commit identities come from the commit's email, which its writer chooses;
+ * the sender is recorded by GitHub and cannot be chosen.
+ */
+async function listContributors(): Promise<(Author | null)[]> {
+  const contributors: (Author | null)[] = [];
+  let count = 0;
+  for (let page = 1; page <= Math.ceil(MAX_COMMITS / PAGE_SIZE); page++) {
+    const batch = await getJson<PullRequestCommit[]>(
+      `/repos/${repo}/pulls/${prNumber}/commits?per_page=${PAGE_SIZE}&page=${page}`,
+    );
+    for (const commit of batch) {
+      contributors.push(commit.author, commit.committer);
+    }
+    count += batch.length;
+    if (batch.length < PAGE_SIZE) break;
+  }
+  // At the cap there may be commits we were not shown.
+  if (count >= MAX_COMMITS) contributors.push(null);
+
+  const senderLogin = process.env.GUARD_SENDER_LOGIN;
+  const senderType = process.env.GUARD_SENDER_TYPE;
+  if (senderLogin && senderType) {
+    contributors.push({ login: senderLogin, type: senderType });
+  }
+
+  return contributors.map((contributor) =>
+    contributor ? { login: contributor.login, type: contributor.type } : null,
+  );
+}
+
 async function fileAt(fullName: string, sha: string, path: string) {
   const response = await github(
     `/repos/${fullName}/contents/${path}?ref=${sha}`,
@@ -87,15 +126,12 @@ function report(lines: string[]): void {
 async function main(): Promise<number> {
   const pr = await getJson<PullRequest>(`/repos/${repo}/pulls/${prNumber}`);
   const author = { login: pr.user.login, type: pr.user.type };
-
-  if (classifyAuthor(author) === "human") {
-    report([`Guard: opened by ${author.login}, a person. Nothing to check.`]);
-    return 0;
-  }
+  const contributors = await listContributors();
 
   const files = await listFiles();
   const input: GuardInput = {
     author,
+    contributors,
     files,
     truncated: files.length !== pr.changed_files,
   };
@@ -117,6 +153,24 @@ async function main(): Promise<number> {
   }
 
   const { kind, violations } = evaluate(input);
+  if (kind === "human") {
+    report([
+      `Guard: opened by ${author.login}, and every commit is a person's. Nothing to check.`,
+    ]);
+    return 0;
+  }
+
+  const others = [
+    ...new Set(
+      contributors
+        .filter((contributor) => contributor?.type !== "User")
+        .map((contributor) => contributor?.login ?? "an unidentified account"),
+    ),
+  ].filter((login) => login !== author.login);
+  if (others.length > 0) {
+    report([`Guard: also worked on by ${others.join(", ")}.`]);
+  }
+
   if (violations.length === 0) {
     report([
       `Guard: passed. ${files.length} file(s) changed by ${author.login} (${kind}), all within what a bot may change.`,
@@ -125,7 +179,7 @@ async function main(): Promise<number> {
   }
 
   report([
-    `Guard: failed. This pull request was opened by ${author.login} (${kind}) and breaks ${violations.length} rule(s):`,
+    `Guard: failed. This pull request was opened by ${author.login} and is held to the ${kind} rules. It breaks ${violations.length} rule(s):`,
     "",
     ...violations.map((violation) => `- ${violation}`),
     "",

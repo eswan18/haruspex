@@ -58,6 +58,12 @@ export interface ChangedFile {
 export interface GuardInput {
   author: Author;
   files: ChangedFile[];
+  /**
+   * Everyone else with a hand in the PR: each commit's author and committer,
+   * and whoever triggered this run. `null` is someone GitHub could not match
+   * to an account, which is treated as not a person.
+   */
+  contributors?: (Author | null)[];
   /** True when the file list may be incomplete (API cap reached). */
   truncated?: boolean;
   /** package.json at the base and head commits, when the PR changes it. */
@@ -78,10 +84,28 @@ export function classifyAuthor(author: Author): AuthorKind {
   return BUMP_BOT_LOGINS.includes(author.login) ? "bump-bot" : "agent";
 }
 
+/** Directory names that hold tests or the data and stand-ins they run on. */
+const TEST_DIRS = [
+  "__tests__",
+  "__mocks__",
+  "__fixtures__",
+  "mocks",
+  "fixtures",
+  "testing",
+  "test-utils",
+];
+
+/**
+ * Tests, and the fixtures and mocks tests are built on. Editing a fixture can
+ * change what a test proves just as surely as editing the test.
+ */
 function isTestFile(path: string): boolean {
+  const segments = path.split("/");
+  const name = segments[segments.length - 1];
   return (
-    /\.(test|spec)\.[^/]+$/.test(path) ||
-    path.split("/").includes("__tests__")
+    segments.slice(0, -1).some((dir) => TEST_DIRS.includes(dir)) ||
+    /\.(test|spec|mock|mocks|fixture|fixtures)\.[^/]+$/.test(name) ||
+    /^(fixtures?|mocks?|test-utils)\.[^/]+$/.test(name)
   );
 }
 
@@ -155,8 +179,26 @@ export function packageJsonViolations(
   );
 }
 
+/**
+ * Which rules apply to the whole PR. Who opened it is not enough: a bot with
+ * write access can push to a branch a person opened, so a person's PR counts
+ * as a person's only when every contributor is one.
+ *
+ * A bump bot's PR keeps the bump rules when an agent adds a fix to it; that is
+ * the dependency workflow. A person's PR never gains the bump allowance.
+ */
+function classifyPullRequest(input: GuardInput): AuthorKind {
+  const opener = classifyAuthor(input.author);
+  if (opener !== "human") return opener;
+  const allPeople = (input.contributors ?? []).every(
+    (contributor) =>
+      contributor !== null && classifyAuthor(contributor) === "human",
+  );
+  return allPeople ? "human" : "agent";
+}
+
 export function evaluate(input: GuardInput): GuardResult {
-  const kind = classifyAuthor(input.author);
+  const kind = classifyPullRequest(input);
   if (kind === "human") return { kind, violations: [] };
 
   const violations: string[] = [];
