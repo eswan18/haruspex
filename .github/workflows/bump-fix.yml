@@ -58,6 +58,7 @@ jobs:
       round: ${{ steps.pr.outputs.round }}
       give_up: ${{ steps.pr.outputs.give_up }}
       patch: ${{ steps.patch.outputs.patch }}
+      note: ${{ steps.agent.outputs.note }}
     steps:
       - name: Find the pull request and count earlier attempts
         id: pr
@@ -155,6 +156,7 @@ jobs:
       # To bill an API key instead of the subscription, swap the env line for
       # ANTHROPIC_API_KEY.
       - name: Ask the agent for a fix
+        id: agent
         if: steps.pr.outputs.give_up == 'false'
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -186,6 +188,9 @@ jobs:
             echo "::error::The CLAUDE_CODE_OAUTH_TOKEN secret is not set."
             exit 1
           fi
+          # Anything the agent wrote is printed through this. A line beginning
+          # "::" is a command to the runner; prefixed, it is only text.
+          quote() { sed 's/^/> /'; echo; }
           # The runner's shell stops at the first failing command. From here
           # on nothing may do that: the agent's exit status has to be read and
           # its report shown, and the step ends with that status.
@@ -202,10 +207,10 @@ jobs:
           if [ "$status" -ne 0 ]; then
             # An API failure exits non-zero with nothing on stderr; the reason
             # is in the JSON result.
-            reason=$(jq -r '"\(.terminal_reason // "unknown"): \(.api_error_status // "") \(.api_error_type // "") \(.result // "")"' \
-              "$RUNNER_TEMP/agent.json" 2>/dev/null | head -c 600 || true)
-            echo "::error::Claude Code exited with status $status. ${reason:-No result was written.}"
-            head -c 2000 "$RUNNER_TEMP/agent.err" || true
+            echo "::error::Claude Code exited with status $status. The reason follows."
+            jq -r '"\(.terminal_reason // "unknown"): \(.api_error_status // "") \(.api_error_type // "") \(.result // "")"' \
+              "$RUNNER_TEMP/agent.json" 2>/dev/null | head -c 600 | quote
+            head -c 2000 "$RUNNER_TEMP/agent.err" | quote
           fi
           {
             echo "### Agent report (exit $status)"
@@ -214,6 +219,13 @@ jobs:
             echo
             echo "Refused tool calls: $(jq -c '[.permission_denials[]?.tool_name]' "$RUNNER_TEMP/agent.json" 2>/dev/null)"
           } >> "$GITHUB_STEP_SUMMARY"
+          # The agent's own account of what it did, for the log and for the
+          # hand-over comment. It is untrusted text: capped, and passed on
+          # base64-encoded so it cannot be read as anything but data.
+          jq -r '.result // ""' "$RUNNER_TEMP/agent.json" 2>/dev/null | head -c 1500 > "$RUNNER_TEMP/note.txt"
+          echo "--- Agent's report:"
+          quote < "$RUNNER_TEMP/note.txt"
+          echo "note=$(base64 -w0 "$RUNNER_TEMP/note.txt")" >> "$GITHUB_OUTPUT"
           exit "$status"
 
       # The agent's working tree, including its .git directory, is untrusted
@@ -386,6 +398,7 @@ jobs:
           PROPOSE: ${{ needs.propose.result }}
           PUSH: ${{ needs.push.result }}
           THIS_RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          NOTE: ${{ needs.propose.outputs.note }}
         run: |
           set -euo pipefail
           if [ "$GIVE_UP" = "true" ]; then
@@ -398,5 +411,12 @@ jobs:
             reason="the agent's change was refused or could not be pushed"
           fi
           gh api --method POST "repos/$REPO/issues/$PR/labels" -f "labels[]=needs-human" > /dev/null
-          gh api --method POST "repos/$REPO/issues/$PR/comments" \
-            -f body="The factory agent has stopped working on this bump: $reason. A person needs to take it from here. Details: $THIS_RUN" > /dev/null
+          body="The factory agent has stopped working on this bump: $reason. A person needs to take it from here. Details: $THIS_RUN"
+          # Quote the agent's report inside a code block, with the fence
+          # characters removed from it, so it renders as plain text: no
+          # mentions, links or formatting of its own.
+          note=$(printf '%s' "$NOTE" | base64 -d 2>/dev/null | tr -d '`~' | head -c 1500 || true)
+          if [ -n "$note" ]; then
+            body=$(printf '%s\n\nWhat the agent reported:\n\n~~~text\n%s\n~~~\n' "$body" "$note")
+          fi
+          gh api --method POST "repos/$REPO/issues/$PR/comments" -f body="$body" > /dev/null
