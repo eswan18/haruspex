@@ -15,6 +15,8 @@ name: Bump Fix
 #             against the rules in .github/guard (taken from the default
 #             branch), and only then commits and pushes it as the factory App.
 #   escalate  Labels the pull request and comments when the loop gives up.
+#   ready     When checks pass on a bump that was handed over, or that the
+#             agent fixed, tells the owner it is ready to review and merge.
 #
 # workflow_run always uses this file from the default branch, so a pull request
 # cannot change it. Event fields such as the branch name are attacker-shaped
@@ -421,6 +423,8 @@ jobs:
             reason="the agent's change was refused or could not be pushed"
           fi
           gh api --method POST "repos/$REPO/issues/$PR/labels" -f "labels[]=needs-human" > /dev/null
+          # It is no longer ready, if it ever was.
+          gh api --method DELETE "repos/$REPO/issues/$PR/labels/ready-for-review" > /dev/null 2>&1 || true
           body="The factory agent has stopped working on this bump: $reason. A person needs to take it from here. Details: $THIS_RUN"
           # Quote the agent's report inside a code block, with the fence
           # characters removed from it, so it renders as plain text: no
@@ -430,3 +434,74 @@ jobs:
             body=$(printf '%s\n\nWhat the agent reported:\n\n~~~text\n%s\n~~~\n' "$body" "$note")
           fi
           gh api --method POST "repos/$REPO/issues/$PR/comments" -f body="$body" > /dev/null
+
+  # Nothing merges automatically, so a bump that turns green needs someone to
+  # notice. Two kinds are worth a notification: one that was handed to a person
+  # and has since started passing (an upstream release landed and Dependabot
+  # rebased), and one the agent fixed. A bump that passed first time is not
+  # announced; Dependabot's own pull request is the notice for that.
+  ready:
+    name: Say it is ready to merge
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      startsWith(github.event.workflow_run.head_branch, 'dependabot/') &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Mint a token for the factory App
+        id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.FACTORY_APP_ID }}
+          private-key: ${{ secrets.FACTORY_APP_KEY }}
+          permission-pull-requests: write
+
+      - name: Label the pull request and notify the owner
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          REPO: ${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          CHECKS_RUN: ${{ github.event.workflow_run.html_url }}
+        run: |
+          set -euo pipefail
+          pr=$(gh api --method GET "repos/$REPO/pulls" -f state=open -f head="$OWNER:$BRANCH" \
+            --jq '[.[] | select(.user.login == "dependabot[bot]" and .user.type == "Bot")][0] // empty')
+          if [ -z "$pr" ]; then
+            echo "No open Dependabot pull request for this branch."
+            exit 0
+          fi
+          number=$(jq -r .number <<<"$pr")
+          if [ "$(jq -r .head.sha <<<"$pr")" != "$HEAD_SHA" ]; then
+            echo "The branch has moved on since this run; a newer run will decide."
+            exit 0
+          fi
+          has_label() { jq -e --arg name "$1" '[.labels[].name] | index($name)' <<<"$pr" > /dev/null; }
+
+          if has_label ready-for-review; then
+            echo "Pull request #$number is already marked ready."
+            exit 0
+          fi
+
+          subjects=$(gh api --paginate "repos/$REPO/pulls/$number/commits" \
+            --jq '.[].commit.message | split("\n")[0]')
+          fixes=$(grep -c -F "$COMMIT_SUBJECT" <<<"$subjects" || true)
+
+          if has_label needs-human; then
+            why="It was handed to a person earlier and its checks have since started passing."
+          elif [ "$fixes" -gt 0 ]; then
+            why="The factory agent pushed $fixes fix commit(s) to it, which need reading."
+          else
+            echo "Pull request #$number passed without help; nothing to announce."
+            exit 0
+          fi
+
+          gh api --method DELETE "repos/$REPO/issues/$number/labels/needs-human" > /dev/null 2>&1 || true
+          gh api --method POST "repos/$REPO/issues/$number/labels" -f "labels[]=ready-for-review" > /dev/null
+          gh api --method POST "repos/$REPO/issues/$number/comments" \
+            -f body="@$OWNER this bump now passes PR Checks and Smoke. $why It is ready for you to review and merge. Passing run: $CHECKS_RUN" > /dev/null
+          echo "Announced pull request #$number as ready."
