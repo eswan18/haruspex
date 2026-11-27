@@ -21,7 +21,8 @@ merging without a person waits for the staging smoke test in step 5.
 - Merging. Nothing in this step merges.
 - Schema changes, dependency changes, configuration, documentation. The
   guard allowlist is unchanged except for new tests.
-- Reading issue comments, or acting on issues the owner did not write.
+- Reading anyone's comments but the owner's, or acting on issues the owner
+  did not write.
 
 ## What would make this a failure
 
@@ -55,8 +56,8 @@ from the agent. If `factory/issue-<n>` already exists it stops and says so.
 
 **Agent** (`factory-agent.yml`, `workflow_call`). The same confinement as the
 bump loop: Claude Code pinned, `--restricted --safe-mode`, tools Read, Grep,
-Glob and Edit, no shell, no token. It is given the issue's title and body in
-`.factory/issue.md`; on a repair round also the failing log and the diff so
+Glob and Edit, no shell, no token. It is given the issue's title and body,
+followed by the owner's own comments, in `.factory/issue.md`; on a repair round also the failing log and the diff so
 far. Its product is a patch collected from a clean copy of the repository. A
 run that stops early yields no patch.
 
@@ -75,6 +76,12 @@ because "new files only" already rules out weakening a test and the label
 was easy to forget. Repairs to dependency bumps still may not add tests. The check is always made against the commit the branch left
 the default branch at, so a test the agent added in round one can be corrected
 in round two but an older one cannot.
+
+**When a task contradicts a test.** The first live run showed the gap: asked
+for a fix that an existing smoke test ruled out, the agent repaired its way
+to green with a different, narrower fix. It is now told to change nothing
+in that case and name the test, which ends in `needs-human` with the reason
+on the pull request. Existing tests stay the owner's to change.
 
 **Repairs** (`issue-fix.yml`, on `workflow_run` of PR Checks). Failure on a
 `factory/issue-*` branch whose pull request the App opened: another agent run,

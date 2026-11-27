@@ -13,7 +13,8 @@ body:
         lines. It may add new test files where the change merits one. It
         cannot change the database schema, dependencies, configuration or
         existing tests, and it cannot run the app. It reads
-        this issue's title and the fields below, and none of the comments.
+        this issue's title, the fields below, and comments written by the
+        owner. Comments from anyone else never reach it.
   - type: textarea
     id: what
     attributes:

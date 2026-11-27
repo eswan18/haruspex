@@ -94,6 +94,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           REF: ${{ inputs.ref }}
           ISSUE: ${{ inputs.issue_number }}
@@ -105,6 +106,19 @@ jobs:
           # pipeline would stop the sender early and fail the step.
           gh api "repos/$REPO/issues/$ISSUE" \
             --jq '"# " + .title + "\n\n" + (.body // "")' > "$RUNNER_TEMP/issue.md"
+          # The owner's own comments are part of the task: that is where a
+          # decision made after filing ends up. Nobody else's are included.
+          # The repository is public, so anyone can comment, and the account
+          # type is checked because only a person's account is a "User".
+          gh api --paginate "repos/$REPO/issues/$ISSUE/comments" \
+            | jq -r --arg owner "$OWNER" '
+                .[] | select(.user.login == $owner and .user.type == "User")
+                | "\n\n## Comment from the owner, \(.created_at)\n\n\(.body // "")"' \
+            > "$RUNNER_TEMP/comments.md"
+          if [ -s "$RUNNER_TEMP/comments.md" ]; then
+            echo "Including $(grep -c '^## Comment from the owner, ' "$RUNNER_TEMP/comments.md") comment(s) from the owner."
+            cat "$RUNNER_TEMP/comments.md" >> "$RUNNER_TEMP/issue.md"
+          fi
           head -c 60000 "$RUNNER_TEMP/issue.md" > .factory/issue.md
           wc -c .factory/issue.md
           if [ -n "$FAILED_RUN" ]; then
@@ -175,7 +189,9 @@ jobs:
           ALLOW_NEW_TESTS: ${{ inputs.allow_new_tests }}
           PROMPT_TASK: |
             You are making a change to this repository. The task is in
-            `.factory/issue.md`, written by the repository's owner.
+            `.factory/issue.md`, written by the repository's owner. Comments
+            the owner added afterwards follow the issue text; where a later
+            comment and the issue disagree, the later comment decides.
 
             Read `CLAUDE.md` first: it describes how the codebase is laid out
             and the conventions to follow. Dependencies are installed in
@@ -186,9 +202,9 @@ jobs:
           PROMPT_FIX: |
             PR Checks failed on this branch. The branch holds an earlier
             attempt at the task in `.factory/issue.md`, written by the
-            repository's owner. What that attempt changed is in
-            `.factory/change-so-far.diff`, and the failing job's log is in
-            `.factory/ci-failure.log`.
+            repository's owner, with any comments the owner added after it.
+            What that attempt changed is in `.factory/change-so-far.diff`,
+            and the failing job's log is in `.factory/ci-failure.log`.
 
             Read `CLAUDE.md` for the codebase's conventions. Dependencies are
             installed in `node_modules`.
@@ -211,6 +227,16 @@ jobs:
             If the task cannot be done inside those limits, or it is not
             clear what is being asked, change nothing and say why. Do not
             guess at a large or ambiguous task.
+
+            An existing test states behaviour the owner has pinned, and you
+            cannot change one. If doing the task as asked makes an existing
+            test fail because that test asserts the very behaviour the task
+            changes, do not get to green by doing something else: not a
+            narrower fix, not a different design from the one asked for.
+            Leave the files as they are and say which test stands in the
+            way, quoting its name, and what in it would have to change. The
+            owner then decides. A test that fails for any other reason, such
+            as a type error or a mistake in your change, is yours to fix.
 
             Finish with a short account for the owner: what you changed, and
             anything they should check by hand. It is posted for them to
