@@ -12,6 +12,7 @@ import {
   syncUserFromIdp,
 } from "@/lib/db_actions/identity-login-flag";
 import { logger } from "@/lib/logger";
+import { safeReturnPath } from "@/lib/safe-return-path";
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -47,7 +48,11 @@ export async function GET(request: NextRequest) {
   const cookieStore = await cookies();
   const storedState = cookieStore.get("oauth_state")?.value;
   const codeVerifier = cookieStore.get("oauth_code_verifier")?.value;
-  const returnUrl = cookieStore.get("oauth_return_url")?.value || "/";
+  // Checked again here: the cookie is client-held, so it is not trusted either.
+  const returnUrl = safeReturnPath(
+    cookieStore.get("oauth_return_url")?.value,
+    baseUrl,
+  );
 
   // Validate state to prevent CSRF attacks
   if (!storedState || state !== storedState) {

@@ -6,13 +6,15 @@ import {
   generateCodeChallenge,
 } from "@/lib/idp/client";
 import { logger } from "@/lib/logger";
+import { safeReturnPath } from "@/lib/safe-return-path";
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
-  const returnUrl = searchParams.get("returnUrl") || "/";
   // Use configured base URL when behind a reverse proxy (Cloudflare Tunnel / Tailscale),
   // falling back to request origin for local development.
   const baseUrl = process.env.APP_BASE_URL ?? request.nextUrl.origin;
+  // The return URL is attacker-controlled; keep it only if it stays on this site.
+  const returnUrl = safeReturnPath(searchParams.get("returnUrl"), baseUrl);
 
   try {
     // Generate PKCE values
