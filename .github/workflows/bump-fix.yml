@@ -150,6 +150,15 @@ jobs:
             "@anthropic-ai/claude-code@$CLAUDE_CODE_VERSION"
           claude --version
 
+      # When the job ends, the checkout action tidies up by running git in
+      # this directory, and git obeys whatever .git/config says, including
+      # settings that name a command to run. So the agent must not be able to
+      # leave a .git behind: the real one is moved away before it starts, and
+      # anything it creates under that name is deleted when it stops.
+      - name: Take git's directory out of the agent's reach
+        if: steps.pr.outputs.give_up == 'false'
+        run: mv .git "$RUNNER_TEMP/dotgit"
+
       # The flags are the security boundary here, not the prompt. Without
       # --restricted, the Read tool can open any file on the runner, including
       # this process's own environment, which holds the Claude token; a
@@ -203,7 +212,8 @@ jobs:
           fi
           # Anything the agent wrote is printed through this. A line beginning
           # "::" is a command to the runner; prefixed, it is only text.
-          quote() { sed 's/^/> /'; echo; }
+          # A bare carriage return ends a line too, as far as the runner cares.
+          quote() { tr '\r' '\n' | sed 's/^/> /'; echo; }
           # The runner's shell stops at the first failing command. From here
           # on nothing may do that: the agent's exit status has to be read and
           # its report shown, and the step ends with that status.
@@ -236,14 +246,22 @@ jobs:
           # hand-over comment. It is untrusted text: capped, and passed on
           # base64-encoded so it cannot be read as anything but data.
           jq -r '.result // ""' "$RUNNER_TEMP/agent.json" 2>/dev/null | head -c 1500 > "$RUNNER_TEMP/note.txt"
+          # The same backstop the patch gets: the report is published too.
+          if grep -qE 'sk-ant-[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{30,}|-----BEGIN [A-Z ]*PRIVATE KEY-----' "$RUNNER_TEMP/note.txt"; then
+            echo "::error::The agent's report contains something shaped like a credential. Discarding it."
+            : > "$RUNNER_TEMP/note.txt"
+          fi
           echo "--- Agent's report:"
           quote < "$RUNNER_TEMP/note.txt"
           echo "note=$(base64 -w0 "$RUNNER_TEMP/note.txt")" >> "$GITHUB_OUTPUT"
           exit "$status"
 
-      # The agent's working tree, including its .git directory, is untrusted
-      # from here on: an edited .git/config could make git run a command. So
-      # no git command runs there. A clean copy is fetched into the runner's
+      - name: Remove any git directory the agent left
+        if: always()
+        run: rm -rf .git
+
+      # The agent's working tree is untrusted from here on, so no git command
+      # runs there. A clean copy is fetched into the runner's
       # temp directory, which the agent could not write to; the source files
       # are copied across as plain data; and the diff is taken in the clean
       # copy. No secret is present in this step.
@@ -298,7 +316,9 @@ jobs:
 
           if [ "$size" -eq 0 ]; then
             echo "patch=" >> "$GITHUB_OUTPUT"
-          elif [ "$size" -gt 200000 ]; then
+          # The next job receives this as one environment variable, and Linux
+          # allows a single one about 128 KB. Base64 adds a third.
+          elif [ "$size" -gt 90000 ]; then
             echo "Patch is too large to consider."
             echo "patch=" >> "$GITHUB_OUTPUT"
           else

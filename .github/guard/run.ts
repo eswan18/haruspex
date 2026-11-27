@@ -12,6 +12,7 @@ import {
   type ChangedFile,
   type GuardInput,
 } from "./policy.ts";
+import { fetchTestsAllowed, issueNumberFromBranch } from "./issue.ts";
 
 const API = "https://api.github.com";
 const PAGE_SIZE = 100;
@@ -56,7 +57,24 @@ interface PullRequest {
   user: { login: string; type: string };
   changed_files: number;
   base: { sha: string; repo: { full_name: string } };
-  head: { sha: string; repo: { full_name: string } | null };
+  head: { sha: string; ref: string; repo: { full_name: string } | null };
+}
+
+/**
+ * An agent's PR may add tests when it is on a factory branch in this
+ * repository and the owner labelled that branch's issue to say so. Anything
+ * that goes wrong while asking leaves the answer at no.
+ */
+async function newTestsAllowed(pr: PullRequest): Promise<boolean> {
+  if (pr.head.repo?.full_name !== repo) return false;
+  const issue = issueNumberFromBranch(pr.head.ref);
+  if (issue === null) return false;
+  try {
+    return await fetchTestsAllowed(token, repo, issue);
+  } catch (err) {
+    console.log(`Could not read issue #${issue}: ${(err as Error).message}`);
+    return false;
+  }
 }
 
 async function listFiles(): Promise<ChangedFile[]> {
@@ -117,7 +135,12 @@ async function fileAt(fullName: string, sha: string, path: string) {
 }
 
 function report(lines: string[]): void {
-  const text = lines.join("\n");
+  // File names and logins come from the pull request. With control
+  // characters replaced, none of them can start a line of its own, which is
+  // where the runner looks for commands.
+  const text = lines
+    .map((line) => line.replace(/[\x00-\x1f\x7f]/g, "?"))
+    .join("\n");
   console.log(text);
   const summary = process.env.GITHUB_STEP_SUMMARY;
   if (summary) appendFileSync(summary, `${text}\n`);
@@ -134,6 +157,7 @@ async function main(): Promise<number> {
     contributors,
     files,
     truncated: files.length !== pr.changed_files,
+    allowNewTests: await newTestsAllowed(pr),
   };
 
   if (files.some((file) => file.filename === "package.json")) {
@@ -169,6 +193,10 @@ async function main(): Promise<number> {
   ].filter((login) => login !== author.login);
   if (others.length > 0) {
     report([`Guard: also worked on by ${others.join(", ")}.`]);
+  }
+
+  if (input.allowNewTests && kind === "agent") {
+    report(["Guard: the owner labelled the issue to allow new test files."]);
   }
 
   if (violations.length === 0) {

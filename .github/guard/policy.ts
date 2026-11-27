@@ -68,6 +68,12 @@ export interface GuardInput {
   truncated?: boolean;
   /** package.json at the base and head commits, when the PR changes it. */
   packageJson?: { base: string; head: string };
+  /**
+   * True when the owner has said, on the issue an agent's PR was written
+   * from, that it may bring tests (issue.ts). It lets the agent add new test
+   * files. It never lets it edit, rename or delete one that already exists.
+   */
+  allowNewTests?: boolean;
 }
 
 export interface GuardResult {
@@ -115,7 +121,11 @@ const SOURCE_EXTENSIONS = [".ts", ".tsx", ".css"];
 /** Dot-directories that are part of the app's URL space, not tooling. */
 const ALLOWED_DOT_DIRS = [".well-known"];
 
-function isSourceFile(path: string): boolean {
+/**
+ * A file of the kinds the app is written in, somewhere a bot may write.
+ * Says nothing about whether it is a test; see isSourceFile and isNewTestPath.
+ */
+function isAppPath(path: string): boolean {
   // Refuse anything that is not a plain repo-relative path before matching
   // prefixes, so "app/../.github/x" cannot ride in on "app/".
   if (path.startsWith("/") || path.split("/").includes("..")) return false;
@@ -126,24 +136,57 @@ function isSourceFile(path: string): boolean {
     .split("/")
     .some((part) => part.startsWith(".") && !ALLOWED_DOT_DIRS.includes(part));
   if (hidden) return false;
+  // A nested node_modules would be picked up ahead of the real package by
+  // anything importing from beside it: a dependency change by another name.
+  if (path.split("/").includes("node_modules")) return false;
   if (!SOURCE_EXTENSIONS.some((ext) => path.endsWith(ext))) return false;
   // Tool configuration is not source, whatever directory it sits in. Some
   // tools look for theirs beside the file they are processing.
   const name = path.slice(path.lastIndexOf("/") + 1);
   if (/\.(config|workspace|setup)\.[^.]+$/.test(name)) return false;
   if (BLOCKED_DIRS.some((dir) => path.startsWith(dir))) return false;
-  if (isTestFile(path)) return false;
   return (
     ALLOWED_FILES.includes(path) ||
     ALLOWED_DIRS.some((dir) => path.startsWith(dir))
   );
 }
 
-function isAllowed(path: string, kind: AuthorKind): boolean {
+function isSourceFile(path: string): boolean {
+  return isAppPath(path) && !isTestFile(path);
+}
+
+/**
+ * Where an agent may put a test it writes: beside the code, named *.test.ts
+ * or *.spec.ts (or .tsx). Fixtures, mocks and shared test helpers stay out of
+ * reach, because other tests are built on them.
+ */
+function isNewTestPath(path: string): boolean {
+  if (!isAppPath(path)) return false;
+  const segments = path.split("/");
+  if (segments.slice(0, -1).some((dir) => TEST_DIRS.includes(dir))) {
+    return false;
+  }
+  return /\.(test|spec)\.tsx?$/.test(segments[segments.length - 1]);
+}
+
+function isAllowed(
+  file: ChangedFile,
+  path: string,
+  kind: AuthorKind,
+  allowNewTests: boolean,
+): boolean {
   if (kind === "bump-bot" && (path === PACKAGE_JSON || path === LOCKFILE)) {
     return true;
   }
-  return isSourceFile(path);
+  if (isSourceFile(path)) return true;
+  // "added" is the one status that cannot change or remove an existing test.
+  return (
+    allowNewTests &&
+    kind === "agent" &&
+    file.status === "added" &&
+    file.previous_filename === undefined &&
+    isNewTestPath(path)
+  );
 }
 
 function parseObject(text: string): Record<string, unknown> | null {
@@ -234,7 +277,7 @@ export function evaluate(input: GuardInput): GuardResult {
       (path): path is string => path !== undefined,
     );
     for (const path of paths) {
-      if (!isAllowed(path, kind)) {
+      if (!isAllowed(file, path, kind, input.allowNewTests === true)) {
         violations.push(`${path || "(empty path)"}: outside what a bot may change`);
       }
     }

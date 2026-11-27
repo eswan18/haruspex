@@ -20,6 +20,12 @@ export function parseNumstat(text: string): ChangedFile[] {
       const match = /^(\d+|-)\t(\d+|-)\t([\s\S]+)$/.exec(record);
       if (!match) throw new Error("Unrecognised numstat record");
       const [, added, deleted, filename] = match;
+      // No real source file has one, and the name is about to be printed in
+      // a log where a line break could start a command to the runner. The
+      // message deliberately does not repeat the name.
+      if (/[\x00-\x1f\x7f]/.test(filename)) {
+        throw new Error("A file name contains a control character");
+      }
       if (added === "-" || deleted === "-") {
         throw new Error(`${filename}: binary files are not allowed`);
       }
@@ -32,8 +38,23 @@ export function parseNumstat(text: string): ChangedFile[] {
     });
 }
 
-/** The rule violations in a patch, given its numstat. Empty means allowed. */
-export function checkPatch(numstat: string): string[] {
+export interface PatchOptions {
+  /** Let the change add new test files (policy.ts, allowNewTests). */
+  allowNewTests?: boolean;
+  /**
+   * Paths the change creates, from `git diff --name-only --diff-filter=A`.
+   * Numstat alone cannot tell a new file from an edited one.
+   */
+  added?: string[];
+}
+
+/** Parse a NUL-separated path list, as `git diff --name-only -z` prints it. */
+export function parsePathList(text: string): string[] {
+  return text.split("\0").filter((path) => path !== "");
+}
+
+/** The rule violations in a change, given its numstat. Empty means allowed. */
+export function checkPatch(numstat: string, options: PatchOptions = {}): string[] {
   let files: ChangedFile[];
   try {
     files = parseNumstat(numstat);
@@ -41,11 +62,16 @@ export function checkPatch(numstat: string): string[] {
     return [(err as Error).message];
   }
   if (files.length === 0) return ["The patch changes nothing"];
+  const added = new Set(options.added ?? []);
+  files = files.map((file) =>
+    added.has(file.filename) ? { ...file, status: "added" } : file,
+  );
 
   // Always the agent's rules, whoever opened the pull request: the agent may
   // not touch dependency files even on a bump.
   return evaluate({
     author: { login: "factory-agent", type: "Bot" },
     files,
+    allowNewTests: options.allowNewTests === true,
   }).violations;
 }

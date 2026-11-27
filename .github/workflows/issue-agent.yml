@@ -1,0 +1,255 @@
+name: Issue Agent
+
+# The owner labels an issue `factory`; the factory agent writes the change and
+# opens a pull request for the owner to review. Nothing here merges.
+#
+# It starts only when the owner applied the label, to an open issue the owner
+# wrote. The repository is public, so anyone can file an issue; nobody else's
+# words reach the agent, and it is never shown the comments.
+#
+# The label `factory-tests`, also applied by the owner, lets the pull request
+# add new test files (.github/guard/issue.ts). Without it the agent may not
+# touch tests at all, and with it existing tests still cannot be changed.
+#
+# The work is split so that no job holds both the AI and the power to push:
+#
+#   start     Decides whether to go ahead and whether tests are allowed.
+#   propose   Runs the agent (factory-agent.yml). Its only product is a patch.
+#   push      Runs no AI and none of the agent's code. Checks the patch against
+#             .github/guard, commits it to factory/issue-<n> as the factory
+#             App, and opens the pull request.
+#   report    Tells the owner, on the issue, what happened.
+#
+# Checks that fail on the pull request are picked up by issue-fix.yml.
+#
+# An `issues` event always uses this file from the default branch. Event
+# fields are passed through `env`, never interpolated into a script.
+on:
+  issues:
+    types: [labeled]
+
+permissions: {}
+
+concurrency:
+  # The label is part of the group so that some other label going on the
+  # issue cannot displace a queued run.
+  group: issue-agent-${{ github.event.issue.number }}-${{ github.event.label.name }}
+  cancel-in-progress: false
+
+jobs:
+  start:
+    name: Decide whether to start
+    if: >
+      github.event.label.name == 'factory' &&
+      github.event.sender.type == 'User' &&
+      github.event.sender.login == github.repository_owner &&
+      github.event.issue.user.login == github.repository_owner &&
+      github.event.issue.state == 'open' &&
+      !github.event.issue.pull_request
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: read
+    outputs:
+      proceed: ${{ steps.decide.outputs.proceed }}
+      allow_new_tests: ${{ steps.decide.outputs.allow_new_tests }}
+    steps:
+      - name: Checkout the guard
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/guard
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+
+      - name: Check for an earlier attempt and for the tests label
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          GUARD_REPO: ${{ github.repository }}
+          ISSUE: ${{ github.event.issue.number }}
+          GUARD_ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          set -euo pipefail
+          branch="factory/issue-$ISSUE"
+          # matching-refs matches by prefix, so pick out the exact name.
+          existing=$(gh api "repos/$REPO/git/matching-refs/heads/$branch" \
+            | jq --arg ref "refs/heads/$branch" '[.[] | select(.ref == $ref)] | length')
+          if [ "$existing" != "0" ]; then
+            echo "Branch $branch already exists; not starting again."
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "proceed=true" >> "$GITHUB_OUTPUT"
+          allow=$(node .github/guard/issue-allows-tests.ts)
+          echo "New test files allowed: $allow"
+          echo "allow_new_tests=$allow" >> "$GITHUB_OUTPUT"
+
+  propose:
+    name: Propose a change
+    needs: start
+    if: needs.start.outputs.proceed == 'true'
+    permissions:
+      contents: read
+      actions: read
+      issues: read
+    uses: ./.github/workflows/factory-agent.yml
+    with:
+      ref: ${{ github.sha }}
+      issue_number: ${{ github.event.issue.number }}
+      allow_new_tests: ${{ needs.start.outputs.allow_new_tests == 'true' }}
+      # A first attempt reads much more of the codebase than a repair, which
+      # keeps the default of 30.
+      max_turns: 60
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+  push:
+    name: Check the change and open a pull request
+    needs: [start, propose]
+    if: needs.propose.outputs.patch != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: read
+    outputs:
+      pr_number: ${{ steps.open.outputs.number }}
+    steps:
+      # No `ref`: on an `issues` event this is the default branch, so these
+      # are rules the agent's change cannot have touched.
+      - name: Checkout the default branch's rules
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/guard
+          path: rules
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+
+      - name: Mint a token for the factory App
+        id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.FACTORY_APP_ID }}
+          private-key: ${{ secrets.FACTORY_APP_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Checkout the commit the agent worked on
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          path: work
+          token: ${{ steps.app.outputs.token }}
+
+      - name: Check the patch, commit it and push a new branch
+        working-directory: work
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          APP_SLUG: ${{ steps.app.outputs.app-slug }}
+          PATCH: ${{ needs.propose.outputs.patch }}
+          BASE_SHA: ${{ github.sha }}
+          ALLOW_NEW_TESTS: ${{ needs.start.outputs.allow_new_tests }}
+          ISSUE: ${{ github.event.issue.number }}
+          COMMIT_SUBJECT: "Implement issue #${{ github.event.issue.number }}"
+          COMMIT_BODY: "Written by the factory agent. Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        run: |
+          set -euo pipefail
+          bash ../rules/.github/guard/apply-patch.sh
+          # The empty value after the colon means "only if the branch does
+          # not exist yet": an earlier attempt is never overwritten.
+          git push --force-with-lease="refs/heads/factory/issue-$ISSUE:" \
+            origin "HEAD:refs/heads/factory/issue-$ISSUE"
+
+      - name: Open the pull request
+        id: open
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          READ_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BASE: ${{ github.event.repository.default_branch }}
+          ISSUE: ${{ github.event.issue.number }}
+          ALLOW_NEW_TESTS: ${{ needs.start.outputs.allow_new_tests }}
+          NOTE: ${{ needs.propose.outputs.note }}
+          THIS_RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          title=$(GH_TOKEN="$READ_TOKEN" gh api "repos/$REPO/issues/$ISSUE" --jq .title | head -c 200)
+          if [ "$ALLOW_NEW_TESTS" = "true" ]; then
+            tests="It was allowed to add new test files."
+          else
+            tests="It was not allowed to add or change tests."
+          fi
+          body=$(printf 'Closes #%s.\n\nWritten by the factory agent from that issue. %s Nothing here has been run by the agent: the checks on this pull request are the first time the code executes. Run: %s\n' \
+            "$ISSUE" "$tests" "$THIS_RUN")
+          # The agent's report goes inside a code block, with the fence
+          # characters removed from it, so it renders as plain text: no
+          # mentions, links or formatting of its own.
+          note=$(printf '%s' "$NOTE" | base64 -d 2>/dev/null | tr -d '`~' | head -c 3000 || true)
+          if [ -n "$note" ]; then
+            body=$(printf '%s\n\nWhat the agent reported:\n\n~~~text\n%s\n~~~\n' "$body" "$note")
+          fi
+          number=$(gh api --method POST "repos/$REPO/pulls" \
+            -f title="$title (#$ISSUE)" -f head="factory/issue-$ISSUE" -f base="$BASE" \
+            -f body="$body" --jq .number)
+          echo "Opened pull request #$number."
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+
+  report:
+    name: Tell the owner what happened
+    needs: [start, propose, push]
+    if: always() && needs.start.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Comment on the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          ISSUE: ${{ github.event.issue.number }}
+          PROCEED: ${{ needs.start.outputs.proceed }}
+          PROPOSE: ${{ needs.propose.result }}
+          AGENT_OK: ${{ needs.propose.outputs.agent_ok }}
+          PUSH: ${{ needs.push.result }}
+          PR: ${{ needs.push.outputs.pr_number }}
+          NOTE: ${{ needs.propose.outputs.note }}
+          THIS_RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          comment() { gh api --method POST "repos/$REPO/issues/$ISSUE/comments" -f body="$1" > /dev/null; }
+
+          if [ "$PUSH" = "success" ] && [ -n "$PR" ]; then
+            comment "The factory agent opened #$PR for this. It is yours to review and merge; if its checks fail, the agent gets up to three tries at repairing it and will say so on the pull request."
+            exit 0
+          fi
+
+          if [ "$PROCEED" != "true" ]; then
+            reason="the branch \`factory/issue-$ISSUE\` already exists from an earlier attempt. Delete that branch, then remove and re-apply the \`factory\` label, to start again"
+          elif [ "$PROPOSE" != "success" ] || [ "$AGENT_OK" != "true" ]; then
+            reason="the agent's run did not finish"
+          elif [ "$PUSH" = "skipped" ]; then
+            reason="the agent made no change it is allowed to make"
+          else
+            reason="the agent's change was refused by the guard rules, or the branch or pull request could not be created"
+          fi
+          # Taking the label off means putting it back on is a fresh request.
+          gh api --method DELETE "repos/$REPO/issues/$ISSUE/labels/factory" > /dev/null 2>&1 || true
+          gh api --method POST "repos/$REPO/issues/$ISSUE/labels" -f "labels[]=needs-human" > /dev/null
+          body="The factory agent did not open a pull request for this: $reason. Details: $THIS_RUN"
+          note=$(printf '%s' "$NOTE" | base64 -d 2>/dev/null | tr -d '`~' | head -c 3000 || true)
+          if [ -n "$note" ]; then
+            body=$(printf '%s\n\nWhat the agent reported:\n\n~~~text\n%s\n~~~\n' "$body" "$note")
+          fi
+          comment "$body"
