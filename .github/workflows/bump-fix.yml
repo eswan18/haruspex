@@ -15,6 +15,9 @@ name: Bump Fix
 #             against the rules in .github/guard (taken from the default
 #             branch), and only then commits and pushes it as the factory App.
 #   escalate  Labels the pull request and comments when the loop gives up.
+#   ready     When checks pass on a bump: merges it if it is a minor/patch
+#             update nobody had to touch and automatic merging is switched on;
+#             otherwise tells the owner it is ready to review and merge.
 #
 # workflow_run always uses this file from the default branch, so a pull request
 # cannot change it. Event fields such as the branch name are attacker-shaped
@@ -421,6 +424,8 @@ jobs:
             reason="the agent's change was refused or could not be pushed"
           fi
           gh api --method POST "repos/$REPO/issues/$PR/labels" -f "labels[]=needs-human" > /dev/null
+          # It is no longer ready, if it ever was.
+          gh api --method DELETE "repos/$REPO/issues/$PR/labels/ready-for-review" > /dev/null 2>&1 || true
           body="The factory agent has stopped working on this bump: $reason. A person needs to take it from here. Details: $THIS_RUN"
           # Quote the agent's report inside a code block, with the fence
           # characters removed from it, so it renders as plain text: no
@@ -430,3 +435,166 @@ jobs:
             body=$(printf '%s\n\nWhat the agent reported:\n\n~~~text\n%s\n~~~\n' "$body" "$note")
           fi
           gh api --method POST "repos/$REPO/issues/$PR/comments" -f body="$body" > /dev/null
+
+  # What happens when a bump's checks pass. Either the factory merges it, or it
+  # tells the owner it is ready, so a green bump is never left unnoticed.
+  #
+  # Merging without a person is limited to one class of change, and is off
+  # unless the repository variable FACTORY_AUTOMERGE_BUMPS is "true":
+  #
+  #   - every commit is Dependabot's own: authored by it, committed and
+  #     signed by GitHub (so neither the agent nor anyone else has touched it),
+  #   - only package.json and the lockfile changed,
+  #   - every direct dependency moved by a minor or patch version
+  #     (.github/guard/bump.ts, judged from the files, not from the PR title),
+  #   - it was never handed to a person.
+  #
+  # Everything else that goes green gets a notice: majors, anything the agent
+  # fixed, and anything that was handed over and has since started passing.
+  # The required checks on main still apply to a merge made here; the App
+  # cannot bypass them.
+  ready:
+    name: Merge it or say it is ready
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      startsWith(github.event.workflow_run.head_branch, 'dependabot/') &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      # No `ref`: the default branch's rules, which a pull request cannot change.
+      - name: Checkout the default branch's rules
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/guard
+          path: rules
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+
+      - name: Mint a token for the factory App
+        id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.FACTORY_APP_ID }}
+          private-key: ${{ secrets.FACTORY_APP_KEY }}
+          permission-pull-requests: write
+          permission-contents: write
+
+      - name: Decide, then merge or notify
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          REPO: ${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          CHECKS_RUN: ${{ github.event.workflow_run.html_url }}
+          AUTOMERGE: ${{ vars.FACTORY_AUTOMERGE_BUMPS }}
+        run: |
+          set -euo pipefail
+          pr=$(gh api --method GET "repos/$REPO/pulls" -f state=open -f head="$OWNER:$BRANCH" \
+            --jq '[.[] | select(.user.login == "dependabot[bot]" and .user.type == "Bot")][0] // empty')
+          if [ -z "$pr" ]; then
+            echo "No open Dependabot pull request for this branch."
+            exit 0
+          fi
+          number=$(jq -r .number <<<"$pr")
+          if [ "$(jq -r .head.sha <<<"$pr")" != "$HEAD_SHA" ]; then
+            echo "The branch has moved on since this run; a newer run will decide."
+            exit 0
+          fi
+          has_label() { jq -e --arg name "$1" '[.labels[].name] | index($name)' <<<"$pr" > /dev/null; }
+          if has_label ready-for-review; then
+            echo "Pull request #$number is already marked ready."
+            exit 0
+          fi
+
+          notify() {
+            gh api --method DELETE "repos/$REPO/issues/$number/labels/needs-human" > /dev/null 2>&1 || true
+            gh api --method POST "repos/$REPO/issues/$number/labels" -f "labels[]=ready-for-review" > /dev/null
+            gh api --method POST "repos/$REPO/issues/$number/comments" \
+              -f body="@$OWNER this bump now passes PR Checks and Smoke. $1 It is ready for you to review and merge. Passing run: $CHECKS_RUN" > /dev/null
+            echo "Announced pull request #$number as ready: $1"
+          }
+
+          commits=$(gh api --paginate --slurp "repos/$REPO/pulls/$number/commits" | jq 'add')
+          fixes=$(jq -r '.[].commit.message | split("\n")[0]' <<<"$commits" | grep -c -F "$COMMIT_SUBJECT" || true)
+
+          # Bumps that have needed attention always go to a person.
+          if has_label needs-human; then
+            notify "It was handed to a person earlier and its checks have since started passing."
+            exit 0
+          fi
+          if [ "$fixes" -gt 0 ]; then
+            notify "The factory agent pushed $fixes fix commit(s) to it, which need reading."
+            exit 0
+          fi
+
+          # From here the question is whether it may merge without a person.
+          # Each test that fails becomes the reason given in the notice.
+          why_not=""
+          # A Dependabot commit is authored by dependabot[bot], committed by
+          # GitHub itself (web-flow) and signed with GitHub's key. The author
+          # alone is a claim anyone can make; the committer and signature are
+          # what GitHub vouches for, and a commit signed by anyone else's key
+          # would have that person as its committer.
+          if ! jq -e 'length > 0 and all(.[];
+                .author.login == "dependabot[bot]" and .author.type == "Bot"
+                and .committer.login == "web-flow"
+                and .commit.verification.verified == true
+                and .commit.verification.reason == "valid")' <<<"$commits" > /dev/null; then
+            why_not="Not every commit is a verified Dependabot commit."
+          fi
+          if [ -z "$why_not" ]; then
+            other_files=$(gh api --paginate "repos/$REPO/pulls/$number/files" --jq '.[].filename' \
+              | grep -v -x -F -e package.json -e package-lock.json || true)
+            if [ -n "$other_files" ]; then
+              why_not="It changes files other than package.json and the lockfile."
+            fi
+          fi
+          if [ -z "$why_not" ]; then
+            base_sha=$(jq -r .base.sha <<<"$pr")
+            fetch() { gh api "repos/$REPO/contents/$1?ref=$2" -H "Accept: application/vnd.github.raw+json" > "$3"; }
+            fetch package.json "$base_sha" "$RUNNER_TEMP/base-package.json"
+            fetch package.json "$HEAD_SHA" "$RUNNER_TEMP/head-package.json"
+            fetch package-lock.json "$base_sha" "$RUNNER_TEMP/base-lock.json"
+            fetch package-lock.json "$HEAD_SHA" "$RUNNER_TEMP/head-lock.json"
+            set +e
+            node rules/.github/guard/classify-bump.ts \
+              "$RUNNER_TEMP/base-package.json" "$RUNNER_TEMP/head-package.json" \
+              "$RUNNER_TEMP/base-lock.json" "$RUNNER_TEMP/head-lock.json" > "$RUNNER_TEMP/verdict.json"
+            verdict=$?
+            set -e
+            sed 's/^/> /' "$RUNNER_TEMP/verdict.json"
+            if [ "$verdict" -ne 0 ]; then
+              why_not="It is not a minor or patch update only: $(jq -r '.reasons | join("; ")' "$RUNNER_TEMP/verdict.json" 2>/dev/null | head -c 500 || echo "it could not be judged")."
+            fi
+          fi
+
+          if [ -n "$why_not" ]; then
+            notify "It needs a person because it does not qualify for automatic merging. $why_not"
+            exit 0
+          fi
+
+          summary=$(jq -r '[.changes[] | "\(.name) \(.from) to \(.to)"] | join(", ")' "$RUNNER_TEMP/verdict.json" | head -c 800)
+          summary=${summary:-indirect dependencies only}
+          if [ "$AUTOMERGE" != "true" ]; then
+            notify "It qualifies for automatic merging (minor and patch updates only, untouched by the agent: $summary), but automatic merging is switched off."
+            exit 0
+          fi
+
+          # `sha` makes the merge fail if the branch moved after these checks.
+          if gh api --method PUT "repos/$REPO/pulls/$number/merge" \
+              -f merge_method=squash -f sha="$HEAD_SHA" > /dev/null; then
+            gh api --method POST "repos/$REPO/issues/$number/comments" \
+              -f body="Merged automatically: minor and patch updates only, all checks passed, untouched by the agent ($summary). Passing run: $CHECKS_RUN" > /dev/null
+            echo "Merged pull request #$number."
+          else
+            notify "It qualified for automatic merging, but the merge was refused, most likely because a required check has not passed yet."
+          fi
