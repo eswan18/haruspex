@@ -1,0 +1,30 @@
+# Dependency bumps, as a slow follower.
+#
+# The aim is to stay roughly current without being among the first to install
+# a new release: most malicious npm versions are found and pulled within days.
+#
+# - cooldown: a version is only proposed once it has been public for a week.
+#   Security updates ignore the cooldown and go to the minimum patched version.
+# - One grouped PR a week for minor and patch updates; each major gets its own.
+# - Nothing here merges anything. A person merges every bump.
+#
+# When a bump breaks PR Checks, .github/workflows/bump-fix.yml lets the factory
+# agent try to repair the call sites, under the limits in .github/guard.
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/Chicago"
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        applies-to: version-updates
+        update-types:
+          - "minor"
+          - "patch"
