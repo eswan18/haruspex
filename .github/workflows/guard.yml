@@ -1,0 +1,51 @@
+name: Guard
+
+# Limits what a bot's pull request may change (rules: .github/guard/policy.ts).
+#
+# This runs on pull_request_target on purpose: the workflow file and the guard
+# script both come from the base branch, so a pull request cannot weaken the
+# check that judges it. That trigger also has access to the base repository's
+# token, which makes two rules non-negotiable:
+#
+#   1. Never check out, install or run anything from the pull request here.
+#      The PR is read as data, through the GitHub API only.
+#   2. Keep the permissions below read-only.
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, edited]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: guard-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  guard:
+    name: Guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # No `ref`: on pull_request_target this is the base branch, not the PR.
+      - name: Checkout the base branch's guard
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/guard
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+
+      - name: Check the pull request
+        run: node .github/guard/run.ts
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GUARD_REPO: ${{ github.repository }}
+          GUARD_PR_NUMBER: ${{ github.event.pull_request.number }}
+          # Who triggered this run, as recorded by GitHub.
+          GUARD_SENDER_LOGIN: ${{ github.event.sender.login }}
+          GUARD_SENDER_TYPE: ${{ github.event.sender.type }}
