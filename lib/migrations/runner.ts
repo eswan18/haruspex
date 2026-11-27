@@ -22,7 +22,7 @@
 
 import { writeSync } from "node:fs";
 
-import { Kysely, PostgresDialect } from "kysely";
+import { CompiledQuery, Kysely, PostgresDialect } from "kysely";
 import {
   Migrator,
   type Migration,
@@ -87,6 +87,33 @@ export function describeConnection(connectionString: string): string {
 }
 
 /**
+ * How long a migration may wait for a lock before it gives up, in milliseconds.
+ *
+ * Changing a table needs a lock nothing else may hold, and Postgres queues lock
+ * requests: while the migration waits behind one slow query, every later query
+ * on that table waits behind the migration. Postgres's default is to wait
+ * forever, which turns a slow query in the app into an outage of that table for
+ * as long as the query runs. Nobody is watching a deploy to cancel it.
+ *
+ * So the wait is short. A migration that cannot get its lock fails, the whole
+ * run is rolled back, and Kubernetes starts the initContainer again a little
+ * later: a busy moment costs a retry instead of holding the table.
+ */
+export const LOCK_WAIT_MS = 5_000;
+
+/** Postgres's SQLSTATE for "canceling statement due to lock timeout". */
+const LOCK_NOT_AVAILABLE = "55P03";
+
+/** Whether `error` is Postgres giving up on a lock after `lock_timeout`. */
+function waitedTooLongForLock(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as { code?: unknown }).code === LOCK_NOT_AVAILABLE
+  );
+}
+
+/**
  * Opens the connection the runner migrates through.
  *
  * `max: 1` because migrations are strictly sequential and kysely takes an
@@ -95,6 +122,12 @@ export function describeConnection(connectionString: string): string {
  * (loopback plaintext, everything else TLS without cert pinning, which is what
  * Neon needs), with `127.0.0.1` accepted alongside `localhost` because that is
  * how a test container is usually addressed.
+ *
+ * Every connection starts with `lock_timeout` set to `LOCK_WAIT_MS`; see there.
+ * It is set on the session rather than inside a migration so that no migration
+ * has to remember it. kysely's own advisory lock is not shortened by this: it
+ * sets its own, longer timeout for that one statement, so a second pod still
+ * waits for the first to finish rather than failing.
  */
 export function createMigrationDb(connectionString: string): Kysely<unknown> {
   const isLoopback =
@@ -108,6 +141,11 @@ export function createMigrationDb(connectionString: string): Kysely<unknown> {
         max: 1,
         ssl: isLoopback ? false : { rejectUnauthorized: false },
       }),
+      onCreateConnection: async (connection) => {
+        await connection.executeQuery(
+          CompiledQuery.raw(`set lock_timeout = ${LOCK_WAIT_MS}`),
+        );
+      },
     }),
   });
 }
@@ -262,6 +300,27 @@ export async function runMigrations(
           "  migrated: a rollback, or an old pod restarted mid-rollout. The app",
           "  would refuse to boot against it too. Roll forward to the build that",
           "  matches the database.",
+        ].join("\n"),
+      );
+      return 1;
+    }
+    if (waitedTooLongForLock(error)) {
+      const message = error instanceof Error ? error.message : String(error);
+      io.error(
+        [
+          "A migration waited too long for a lock: something else is using a",
+          `table it needs, and after ${LOCK_WAIT_MS / 1000}s it gave up rather than hold up every`,
+          "other query on that table. The whole run was rolled back and the",
+          "database is as it was before it.",
+          "",
+          "  This container is started again, so a busy moment clears itself. If it",
+          "  keeps failing, something is holding the table open: a long query, or a",
+          "  transaction left idle. This shows it, on the same database:",
+          "",
+          "    select pid, state, xact_start, left(query, 80) from pg_stat_activity",
+          "    where state <> 'idle' order by xact_start;",
+          "",
+          `  Postgres said: ${message}`,
         ].join("\n"),
       );
       return 1;

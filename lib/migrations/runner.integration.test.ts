@@ -3,7 +3,7 @@ import * as path from "node:path";
 
 import { Kysely, PostgresDialect, sql } from "kysely";
 import { FileMigrationProvider, Migrator } from "kysely/migration";
-import { Pool } from "pg";
+import { Client, Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
@@ -14,6 +14,7 @@ import {
 
 import { readAppliedMigrations, verifyMigrations } from "./check";
 import { MIGRATION_MANIFEST } from "./manifest";
+import { LOCK_WAIT_MS } from "./runner";
 
 const useContainers = process.env.TEST_USE_CONTAINERS === "true";
 
@@ -206,6 +207,101 @@ describe.skipIf(!useContainers)("the compiled migration runner, end to end", () 
     // kysely runs the whole batch in one transaction on Postgres.
     expect(result.stderr).toContain("rolled back");
     expect(result.stdout).toContain("Error");
+  }, 300000);
+
+  it("gives up on a table another session holds, and migrates once it is free", async () => {
+    // A migration needs a lock on every table it changes, and while it waits
+    // for one, everything else that wants that table waits behind it. Left to
+    // wait forever, one long query in the app turns a deploy into an outage of
+    // that table. The runner gives up after a few seconds instead, and the
+    // initContainer is started again.
+    //
+    // The first migration adds a foreign key to `users`, so a session holding
+    // `users` is in its way: what a slow query or an idle transaction in the
+    // app looks like from here.
+    const db = await createPreviewBranch("runner_locked_table", 0);
+    const env = { DATABASE_URL: urlFor("runner_locked_table") };
+    const blocker = new Client({
+      connectionString: env.DATABASE_URL,
+      ssl: false,
+    });
+    await blocker.connect();
+    await blocker.query("begin");
+    await blocker.query("lock table users in access exclusive mode");
+    // Without a limit the runner would wait for as long as the lock is held.
+    // Let go of it eventually, so losing the limit fails this test (the run
+    // then succeeds, and the assertions below say so) rather than hanging it.
+    let released = false;
+    const release = async () => {
+      if (released) return;
+      released = true;
+      await blocker.query("rollback");
+    };
+    const watchdog = setTimeout(() => void release(), 45000);
+
+    try {
+      const blocked = await runArtifact(artifact.outFile, env);
+
+      expect(blocked.code).toBe(1);
+      expect(blocked.stderr).toContain("waited too long for a lock");
+      // Said as what it is, with the same promise any failure makes.
+      expect(blocked.stderr).not.toContain("Migration failed");
+      expect(blocked.stderr).toContain("rolled back");
+      // Nothing was changed: the first migration's table is not there.
+      const { rows } = await sql<{ present: boolean }>`
+        select to_regclass('public.suggested_props') is not null as present
+      `.execute(db);
+      expect(rows[0].present).toBe(false);
+
+      // The retry, with the table free again. It also proves the failed run
+      // let go of kysely's own lock, which would otherwise block this one.
+      await release();
+      const retried = await runArtifact(artifact.outFile, env);
+
+      expect(retried.code).toBe(0);
+      expect(await readAppliedMigrations(db)).toEqual([...MIGRATION_MANIFEST]);
+    } finally {
+      clearTimeout(watchdog);
+      await release().catch(() => {});
+      await blocker.end();
+    }
+  }, 300000);
+
+  it("still waits its turn behind another runner, past the lock limit", async () => {
+    // Two pods starting together: kysely serialises them with an advisory
+    // lock, and the second must wait for the first, not give up after the few
+    // seconds a table lock is allowed. kysely sets its own timeout for that
+    // one wait, which is what this pins. The lock id is kysely's
+    // (dialect/postgres/postgres-adapter); if an upgrade changes it, this
+    // stops waiting and the elapsed-time assertion says so.
+    const KYSELY_MIGRATION_LOCK = "3853314791062309107";
+    const heldFor = LOCK_WAIT_MS + 3000;
+    await createPreviewBranch("runner_second_pod", 0);
+    const env = { DATABASE_URL: urlFor("runner_second_pod") };
+    const firstPod = new Client({
+      connectionString: env.DATABASE_URL,
+      ssl: false,
+    });
+    await firstPod.connect();
+    await firstPod.query(`select pg_advisory_lock(${KYSELY_MIGRATION_LOCK})`);
+    const finish = setTimeout(
+      () =>
+        void firstPod.query(
+          `select pg_advisory_unlock(${KYSELY_MIGRATION_LOCK})`,
+        ),
+      heldFor,
+    );
+
+    try {
+      const started = Date.now();
+      const second = await runArtifact(artifact.outFile, env);
+
+      expect(second.code).toBe(0);
+      expect(Date.now() - started).toBeGreaterThanOrEqual(heldFor - 500);
+    } finally {
+      clearTimeout(finish);
+      await firstPod.end();
+    }
   }, 300000);
 
   it("exits non-zero when the database is unreachable", async () => {
