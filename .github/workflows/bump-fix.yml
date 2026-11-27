@@ -127,7 +127,14 @@ jobs:
 
       - name: Install Claude Code
         if: steps.pr.outputs.give_up == 'false'
-        run: npm install --global "@anthropic-ai/claude-code@$CLAUDE_CODE_VERSION"
+        # npm skips install scripts unless a package is named; Claude Code's
+        # fetches its binary, and without it the CLI exits at once. The version
+        # check makes a broken install fail here, with a clear message.
+        run: |
+          set -euo pipefail
+          npm install --global --allow-scripts=@anthropic-ai/claude-code \
+            "@anthropic-ai/claude-code@$CLAUDE_CODE_VERSION"
+          claude --version
 
       # The flags are the security boundary here, not the prompt. Without
       # --restricted, the Read tool can open any file on the runner, including
@@ -175,6 +182,10 @@ jobs:
             Keep the change as small as the fix requires.
         run: |
           set -uo pipefail
+          if [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ]; then
+            echo "::error::The CLAUDE_CODE_OAUTH_TOKEN secret is not set."
+            exit 1
+          fi
           claude -p "$PROMPT" \
             --restricted --safe-mode --strict-mcp-config \
             --tools "Read,Grep,Glob,Edit" \
@@ -182,8 +193,13 @@ jobs:
             --permission-mode dontAsk \
             --settings '{"permissions":{"blockReadsOutsideWorkingDirectories":true,"blockWritesOutsideWorkingDirectories":true}}' \
             --max-turns 30 \
-            --output-format json > "$RUNNER_TEMP/agent.json"
+            --output-format json > "$RUNNER_TEMP/agent.json" 2> "$RUNNER_TEMP/agent.err"
           status=$?
+          if [ "$status" -ne 0 ]; then
+            echo "::error::Claude Code exited with status $status."
+            echo "--- stderr"; head -c 4000 "$RUNNER_TEMP/agent.err"
+            echo "--- stdout"; head -c 4000 "$RUNNER_TEMP/agent.json"
+          fi
           {
             echo "### Agent report (exit $status)"
             echo
