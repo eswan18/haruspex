@@ -89,6 +89,21 @@ describe("reviewReasons: what the file says", () => {
     "await jwtVerify(token, key);",
     "if (user.deactivated_at) return;",
     "startImpersonation(target.id);",
+    "if (member.role  ===  'admin') {}",
+    "if (member.role\n  !== 'admin') {}",
+    "if (member.role == 'admin') {}",
+    "if (['admin'].includes(member.role)) {}",
+    "if (allowed.includes(role)) {}",
+    "if (roles.includes('admin')) {}",
+    'import { db } from "@/lib/database";',
+    "import { withTransaction } from '../db-helpers';",
+    'import { something } from "@/lib/auth";',
+    'import { refresh } from "@/lib/auth/token-refresh";',
+    'import type { User } from "@/lib/get-user";',
+    'const m = await import("@/lib/database");',
+    "const rows = await db.selectFrom('props').selectAll().execute();",
+    "await trx.deleteFrom('forecasts').where('id', '=', id).execute();",
+    'import { sql } from "kysely";',
   ])("waits when the text is: %s", (line) => {
     expect(waits(changed("lib/anything.ts", { head: `${PLAIN}${line}\n` }))).toBe(true);
   });
@@ -110,6 +125,11 @@ describe("reviewReasons: what the file says", () => {
     "// administrators are described on the help page",
     "const isAdministrative = true;",
     "export const roles = ['forecaster'];",
+    'import { Button } from "@/components/ui/button";',
+    'import { formatDate } from "@/lib/time-utils";',
+    'import type { Prop } from "@/types/db_types";',
+    'import { authors } from "@/lib/authors";',
+    "const from = selection.from;",
   ])("does not wait for ordinary text: %s", (line) => {
     expect(authorizationIn(line)).toBeNull();
   });

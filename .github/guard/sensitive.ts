@@ -86,7 +86,22 @@ const AUTH_MARKERS: [RegExp, string][] = [
   [/\bgetUserFromCookies\b|\bgetCurrentUser\w*\b/, "reads who is signed in"],
   [/\bwithRLS\b/, "row-level security"],
   [/\bcanCreateProps\b|\bcanEdit\w*\b|\bcanManage\w*\b|\bcanView\w*\b/, "a permission check"],
-  [/\bcompetition_members\b|\bMemberRole\b|\brole === |\brole !== /, "a membership role"],
+  [
+    /\bcompetition_members\b|\bMemberRole\b|\brole\s*[!=]==?|\.includes\(\s*\w*\.?role\b|\broles?\.includes\(/,
+    "a membership role",
+  ],
+  // Anything that imports the access-control modules is making use of them,
+  // by whatever name. Covers "@/lib/auth", relative paths and subpaths.
+  [
+    /from\s+["'][^"']*\/(?:database|database-factory|db-helpers|auth|get-user|idp|prop-write-access|server-action-helpers|safe-return-path)(?:\/[^"']*)?["']/,
+    "imports access-control code",
+  ],
+  [/\bimport\(\s*["'][^"']*\/(?:database|db-helpers|auth|get-user|idp)\b/, "imports access-control code"],
+  // A query written here is one that row-level security has to be right for.
+  [
+    /\.(?:selectFrom|insertInto|updateTable|deleteFrom|mergeInto)\(|\bsql`|\bfrom\s+["']kysely["']/,
+    "queries the database",
+  ],
   [/\bUNAUTHORIZED\b|\bFORBIDDEN\b/, "refuses unauthorized callers"],
   [/[Ii]mpersonat/, "impersonation"],
   [/\bcookies\(\)|\bheaders\(\)\.get\(["']authorization/i, "reads credentials"],
