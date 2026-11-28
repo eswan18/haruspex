@@ -37,8 +37,11 @@ issue. Production is never touched by any of it. Review happens at promotion.
 5. If the checks pass, the factory merges it and labels it `unreviewed`.
 
 Add `review-first` to the issue to make its pull request wait for a person.
-A pull request that touches sign-in, sessions, tokens or row-level security
-always waits, whatever its labels; the list is `.github/guard/sensitive.ts`.
+Some pull requests always wait, whatever their labels: those that touch
+sign-in, session or access code, anything under `app/` except stylesheets,
+a server action, or any file that makes an authorization decision. That
+leaves components, pure logic, hooks, types and styles to merge on their own.
+The rule is `.github/guard/sensitive.ts`.
 
 When the agent declines or gets stuck, answer it in a comment on the issue
 and put the `factory` label back. It starts again and reads your comment.

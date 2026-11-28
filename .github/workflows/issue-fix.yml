@@ -243,8 +243,9 @@ jobs:
   #     factory's, so nothing a person pushed is merged unseen by them,
   #   - it was never handed to a person,
   #   - neither it nor its issue is labelled `review-first`,
-  #   - it touches none of the paths in .github/guard/sensitive.ts (sign-in,
-  #     sessions, tokens, row-level security),
+  #   - nothing in it must be read first (.github/guard/sensitive.ts):
+  #     sign-in and access code, endpoints, or any file that makes an
+  #     authorization decision,
   #   - Guard has passed on this exact commit.
   #
   # The required checks on main still apply to a merge made here; the App
@@ -364,20 +365,19 @@ jobs:
             exit 0
           fi
 
-          # Some code is too important to merge unread. Every path the pull
-          # request touches is checked, including the old name of a renamed
-          # file. Failing to find out counts as touching one.
+          # Some changes are never merged unread: sign-in and access code,
+          # endpoints, and any file that makes an authorization decision
+          # (.github/guard/sensitive.ts). Failing to find out counts as one.
           set +e
-          sensitive=$(gh api --paginate --slurp "repos/$REPO/pulls/$number/files" \
-            | jq '[add[] | .filename, (.previous_filename // empty)]' \
-            | node rules/.github/guard/sensitive-paths.ts)
+          reasons=$(GITHUB_TOKEN="$READ_TOKEN" GUARD_REPO="$REPO" GUARD_PR_NUMBER="$number" GUARD_HEAD_SHA="$HEAD_SHA" \
+            node rules/.github/guard/merge-review.ts)
           verdict=$?
           set -e
           if [ "$verdict" -eq 1 ]; then
-            notify "It touches code that is never merged unread: $(jq -r 'join(", ")' <<<"$sensitive" | tr -d '\n\r' | head -c 400)."
+            notify "It changes code that is never merged unread ($(jq -r 'join("; ")' <<<"$reasons" | tr -d '\n\r`' | head -c 600))."
             exit 0
           elif [ "$verdict" -ne 0 ]; then
-            notify "Its changed files could not be checked against the sensitive paths, so it is not merged automatically."
+            notify "Its changes could not be checked for code that must be read first, so it is not merged automatically."
             exit 0
           fi
 
