@@ -9,7 +9,7 @@
  * top-level directory or config file is protected by default.
  */
 
-export const LIMITS = { maxFiles: 25, maxLines: 400 } as const;
+export const LIMITS = { maxFiles: 25, maxLines: 800 } as const;
 
 /** Directories of application source a bot may edit. */
 const ALLOWED_DIRS = ["app/", "components/", "lib/", "hooks/", "types/"];

@@ -37,11 +37,16 @@ issue. Production is never touched by any of it. Review happens at promotion.
 5. If the checks pass, the factory merges it and labels it `unreviewed`.
 
 Add `review-first` to the issue to make its pull request wait for a person.
+A pull request that touches sign-in, sessions, tokens or row-level security
+always waits, whatever its labels; the list is `.github/guard/sensitive.ts`.
+
+When the agent declines or gets stuck, answer it in a comment on the issue
+and put the `factory` label back. It starts again and reads your comment.
 
 ### What the agent can and cannot change
 
 It can edit `.ts`, `.tsx` and `.css` files under `app/`, `components/`,
-`lib/`, `hooks/` and `types/`, and `proxy.ts`: at most 25 files and 400 lines
+`lib/`, `hooks/` and `types/`, and `proxy.ts`: at most 25 files and 800 lines
 per pull request. It can add new test files beside the code.
 
 It cannot change existing tests, fixtures or mocks, migrations, dependencies,

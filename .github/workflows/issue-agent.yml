@@ -218,7 +218,7 @@ jobs:
           fi
 
           if [ "$PROCEED" != "true" ]; then
-            reason="the branch \`factory/issue-$ISSUE\` already exists from an earlier attempt. Delete that branch, then remove and re-apply the \`factory\` label, to start again"
+            reason="the branch \`factory/issue-$ISSUE\` already exists from an earlier attempt, and has to be deleted first"
           elif [ "$PROPOSE" != "success" ] || [ "$AGENT_OK" != "true" ]; then
             reason="the agent's run did not finish"
           elif [ "$PUSH" = "skipped" ]; then
@@ -229,7 +229,7 @@ jobs:
           # Taking the label off means putting it back on is a fresh request.
           gh api --method DELETE "repos/$REPO/issues/$ISSUE/labels/factory" > /dev/null 2>&1 || true
           gh api --method POST "repos/$REPO/issues/$ISSUE/labels" -f "labels[]=needs-human" > /dev/null
-          body="The factory agent did not open a pull request for this: $reason. Details: $THIS_RUN"
+          body="The factory agent did not open a pull request for this: $reason. To have it try again, answer in a comment here and put the \`factory\` label back; it reads your comments. Details: $THIS_RUN"
           note=$(printf '%s' "$NOTE" | base64 -d 2>/dev/null | tr -d '`~' | head -c 3000 || true)
           if [ -n "$note" ]; then
             body=$(printf '%s\n\nWhat the agent reported:\n\n~~~text\n%s\n~~~\n' "$body" "$note")
