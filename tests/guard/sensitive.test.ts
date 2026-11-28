@@ -89,6 +89,10 @@ describe("reviewReasons: what the file says", () => {
     "await jwtVerify(token, key);",
     "if (user.deactivated_at) return;",
     "startImpersonation(target.id);",
+    "return error('no', ERROR_CODES.UNAUTHORIZED);",
+    "return new Response(null, { status: 403, statusText: FORBIDDEN });",
+    "const h = (await headers()).get('x-forwarded-for');",
+    'import { SignJWT } from "jose";',
     "if (member.role  ===  'admin') {}",
     "if (member.role\n  !== 'admin') {}",
     "if (member.role == 'admin') {}",
@@ -104,6 +108,22 @@ describe("reviewReasons: what the file says", () => {
     "const rows = await db.selectFrom('props').selectAll().execute();",
     "await trx.deleteFrom('forecasts').where('id', '=', id).execute();",
     'import { sql } from "kysely";',
+    'import x from"@/lib/auth";',
+    'import "@/lib/database";',
+    'const a = require("@/lib/get-user");',
+    'const b = await import(`@/lib/idp/client`);',
+    'export * from "../auth/index.ts";',
+    'import { t } from "@/lib/mcp/tools";',
+    'import { v } from "@/lib/notifications/unsubscribe-token";',
+    'import { canSee } from "./access";',
+    "const m = await import(pathFromSomewhere);",
+    'const n = await import("@/lib/" + name);',
+    "const req = require(name);",
+    "const q = sql<number>`select 1`;",
+    "const r = sql.raw(text);",
+    'import { Kysely } from "kysely/helpers/postgres";',
+    "const rows = await query.execute();",
+    "const one = await query.executeTakeFirstOrThrow();",
   ])("waits when the text is: %s", (line) => {
     expect(waits(changed("lib/anything.ts", { head: `${PLAIN}${line}\n` }))).toBe(true);
   });
@@ -130,6 +150,10 @@ describe("reviewReasons: what the file says", () => {
     'import type { Prop } from "@/types/db_types";',
     'import { authors } from "@/lib/authors";',
     "const from = selection.from;",
+    'const Chart = dynamic(() => import("@/components/chart"));',
+    'const label = "authors/of/the/week";',
+    'import { cn } from "@/lib/utils";',
+    'const href = "/competitions/" + id;',
   ])("does not wait for ordinary text: %s", (line) => {
     expect(authorizationIn(line)).toBeNull();
   });

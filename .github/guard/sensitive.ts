@@ -76,6 +76,29 @@ function isRouteHandler(path: string): boolean {
 }
 
 /**
+ * How the listed modules under lib/ are spelled when another file refers to
+ * them: the path after "lib", so "@/lib/auth", "../auth" and
+ * "@/lib/auth/token-refresh" all count. Built from SENSITIVE_PATHS so the
+ * two cannot drift apart. "access" is the per-competition access module,
+ * which its neighbours import as "./access".
+ */
+const ACCESS_MODULES = [
+  ...SENSITIVE_PATHS.filter((entry) => entry.startsWith("lib/")).map((entry) =>
+    entry
+      .slice("lib/".length)
+      .replace(/\/$/, "")
+      .replace(/\.[^./]+$/, ""),
+  ),
+  "access",
+];
+
+const ACCESS_MODULE_IN_A_STRING = new RegExp(
+  "[\"'`][^\"'`\\n]*/(?:" +
+    ACCESS_MODULES.map((name) => name.replace(/[.*+?^${}()|[\]\\/-]/g, "\\$&")).join("|") +
+    ")(?:\\.[cm]?[jt]sx?)?(?:/[^\"'`\\n]*)?[\"'`]",
+);
+
+/**
  * The names authorization goes by in this codebase. Matched as whole words,
  * case-sensitively, so that ordinary words (a button's `role`, a `session`
  * of play) do not count.
@@ -90,22 +113,25 @@ const AUTH_MARKERS: [RegExp, string][] = [
     /\bcompetition_members\b|\bMemberRole\b|\brole\s*[!=]==?|\.includes\(\s*\w*\.?role\b|\broles?\.includes\(/,
     "a membership role",
   ],
-  // Anything that imports the access-control modules is making use of them,
-  // by whatever name. Covers "@/lib/auth", relative paths and subpaths.
+  // Anything that names an access-control module is making use of it. The
+  // module's path is looked for in any string, not in any particular import
+  // syntax: `from`, `import()`, `require()`, a bare `import "x"` and whatever
+  // comes next all have to spell the path somewhere.
+  [ACCESS_MODULE_IN_A_STRING, "names an access-control module"],
+  // An import whose target is not a plain string cannot be read at all.
   [
-    /from\s+["'][^"']*\/(?:database|database-factory|db-helpers|auth|get-user|idp|prop-write-access|server-action-helpers|safe-return-path)(?:\/[^"']*)?["']/,
-    "imports access-control code",
+    /\bimport\s*\(\s*(?!["'][^"'`$\n]*["']\s*\))|\brequire\s*\(|\bimport\.meta\.glob\b|\beval\s*\(|\bnew\s+Function\s*\(/,
+    "loads code in a way that cannot be checked",
   ],
-  [/\bimport\(\s*["'][^"']*\/(?:database|db-helpers|auth|get-user|idp)\b/, "imports access-control code"],
   // A query written here is one that row-level security has to be right for.
   [
-    /\.(?:selectFrom|insertInto|updateTable|deleteFrom|mergeInto)\(|\bsql`|\bfrom\s+["']kysely["']/,
+    /\.(?:selectFrom|insertInto|updateTable|deleteFrom|mergeInto|replaceInto)\(|\.execute(?:TakeFirst(?:OrThrow)?|Query)?\(|\bsql\b|["'`]kysely\b/,
     "queries the database",
   ],
   [/\bUNAUTHORIZED\b|\bFORBIDDEN\b/, "refuses unauthorized callers"],
   [/[Ii]mpersonat/, "impersonation"],
-  [/\bcookies\(\)|\bheaders\(\)\.get\(["']authorization/i, "reads credentials"],
-  [/\bJWT_SECRET\b|\bjwtVerify\b|\bSignJWT\b|\bvalidateIDPToken\b/, "tokens"],
+  [/\bcookies\s*\(|\bheaders\s*\(\s*\)|["'`]authorization["'`]/i, "reads credentials"],
+  [/\bJWT_SECRET\b|\bjwtVerify\b|\bSignJWT\b|\bvalidateIDPToken\b|["'`]jose\b/, "tokens"],
   [/\bdeactivated_at\b/, "account deactivation"],
 ];
 
