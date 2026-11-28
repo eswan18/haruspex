@@ -219,7 +219,7 @@ jobs:
           gh api --method POST "repos/$REPO/issues/$PR/labels" -f "labels[]=needs-human" > /dev/null
           # It is no longer ready, if it ever was.
           gh api --method DELETE "repos/$REPO/issues/$PR/labels/ready-for-review" > /dev/null 2>&1 || true
-          body="The factory agent has stopped working on this pull request: $reason. A person needs to take it from here. Details: $THIS_RUN"
+          body="The factory agent has stopped working on this pull request: $reason. A person needs to take it from here. To have the agent try again, add guidance as a comment on the issue, remove the \`needs-human\` label here, and re-run the failed checks. Details: $THIS_RUN"
           # Quote the agent's report inside a code block, with the fence
           # characters removed from it, so it renders as plain text.
           note=$(printf '%s' "$NOTE" | base64 -d 2>/dev/null | tr -d '`~' | head -c 3000 || true)
@@ -243,6 +243,8 @@ jobs:
   #     factory's, so nothing a person pushed is merged unseen by them,
   #   - it was never handed to a person,
   #   - neither it nor its issue is labelled `review-first`,
+  #   - it touches none of the paths in .github/guard/sensitive.ts (sign-in,
+  #     sessions, tokens, row-level security),
   #   - Guard has passed on this exact commit.
   #
   # The required checks on main still apply to a merge made here; the App
@@ -261,7 +263,21 @@ jobs:
       # Write, to close the issue after a merge; see the end of the script.
       issues: write
       pull-requests: read
+      contents: read
     steps:
+      # No `ref`: the default branch's rules, which a pull request cannot change.
+      - name: Checkout the default branch's rules
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/guard
+          path: rules
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+
       - name: Mint a token for the factory App
         id: app
         uses: actions/create-github-app-token@v3
@@ -345,6 +361,23 @@ jobs:
                 .author.login == $bot and .author.type == "Bot"
                 and .committer.login == $bot)' <<<"$commits" > /dev/null; then
             notify "Someone other than the factory has pushed to it."
+            exit 0
+          fi
+
+          # Some code is too important to merge unread. Every path the pull
+          # request touches is checked, including the old name of a renamed
+          # file. Failing to find out counts as touching one.
+          set +e
+          sensitive=$(gh api --paginate --slurp "repos/$REPO/pulls/$number/files" \
+            | jq '[add[] | .filename, (.previous_filename // empty)]' \
+            | node rules/.github/guard/sensitive-paths.ts)
+          verdict=$?
+          set -e
+          if [ "$verdict" -eq 1 ]; then
+            notify "It touches code that is never merged unread: $(jq -r 'join(", ")' <<<"$sensitive" | tr -d '\n\r' | head -c 400)."
+            exit 0
+          elif [ "$verdict" -ne 0 ]; then
+            notify "Its changed files could not be checked against the sensitive paths, so it is not merged automatically."
             exit 0
           fi
 

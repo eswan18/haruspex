@@ -11,7 +11,7 @@ body:
         is on.
 
         The agent can change `.ts`, `.tsx` and `.css` files under `app/`,
-        `components/`, `lib/`, `hooks/` and `types/`: at most 25 files and 400
+        `components/`, `lib/`, `hooks/` and `types/`: at most 25 files and 800
         lines. It may add new test files where the change merits one. It
         cannot change the database schema, dependencies, configuration or
         existing tests, and it cannot run the app. It reads

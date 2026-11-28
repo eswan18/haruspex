@@ -275,7 +275,7 @@ jobs:
             kept. `package.json`, the lockfile, database migrations
             (`lib/migrations/`), configuration, documentation and CI files
             are off-limits. The pull request as a whole must stay within 25
-            files and 400 changed lines.
+            files and 800 changed lines.
 
             If the task cannot be done inside those limits, or it is not
             clear what is being asked, change nothing and say why. Do not
