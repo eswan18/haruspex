@@ -258,7 +258,8 @@ jobs:
     timeout-minutes: 10
     permissions:
       checks: read
-      issues: read
+      # Write, to close the issue after a merge; see the end of the script.
+      issues: write
       pull-requests: read
     steps:
       - name: Mint a token for the factory App
@@ -273,7 +274,8 @@ jobs:
       - name: Decide, then merge or notify
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
-          # Reads that the App has no permission for go through this one.
+          # What the App has no permission for goes through the workflow's
+          # own token: reading checks and issues, and closing the issue.
           READ_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           OWNER: ${{ github.repository_owner }}
@@ -367,6 +369,12 @@ jobs:
             gh api --method POST "repos/$REPO/issues/$number/comments" \
               -f body="Merged automatically after $repairs repair(s): all checks passed and every commit is the factory's. Nobody has read this change. It is labelled \`unreviewed\` so it can be found before the next promotion to production; remove the label once it has been read. Passing run: $CHECKS_RUN" > /dev/null
             echo "Merged pull request #$number."
+            # "Closes #n" in the pull request does not close the issue here:
+            # GitHub closes it as whoever merged, and the App has no say over
+            # issues. So the workflow closes it.
+            GH_TOKEN="$READ_TOKEN" gh api --method PATCH "repos/$REPO/issues/$issue" \
+              -f state=closed -f state_reason=completed > /dev/null \
+              || echo "::warning::Merged, but issue #$issue could not be closed."
           else
             notify "It qualified for automatic merging, but the merge was refused."
           fi
