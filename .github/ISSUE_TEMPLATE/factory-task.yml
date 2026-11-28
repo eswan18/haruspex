@@ -6,7 +6,9 @@ body:
     attributes:
       value: |
         Filing this starts nothing. The agent begins when the repository's
-        owner adds the `factory` label.
+        owner adds the `factory` label. Add `review-first` as well if its
+        pull request should wait for a person even when automatic merging
+        is on.
 
         The agent can change `.ts`, `.tsx` and `.css` files under `app/`,
         `components/`, `lib/`, `hooks/` and `types/`: at most 25 files and 400

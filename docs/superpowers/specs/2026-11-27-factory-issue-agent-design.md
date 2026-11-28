@@ -97,7 +97,33 @@ token, because the App has no issues permission and should not gain one.
 - New tests count toward the 400-line cap.
 - Label `factory`; branch `factory/issue-<n>`.
 
+## Merging without a person (added 2026-11-27)
+
+The owner's goal is that work reaches staging with nobody in the loop, and
+that review happens at promotion to production, which stays manual. A
+post-deploy staging check (the handoff's step 5) was considered as the gate
+and dropped: it runs after the merge, so it prevents nothing, and for the
+source-only changes the agent can make it repeats what the pull request's
+own Smoke job has already run.
+
+So `issue-fix.yml` merges the agent's pull request when PR Checks passes,
+if the repository variable `FACTORY_AUTOMERGE_ISSUES` is `true` and:
+
+- the factory opened it and every commit is the factory's;
+- it was never labelled `needs-human`;
+- neither it nor its issue is labelled `review-first`;
+- Guard has passed on that commit.
+
+Anything else gets the `ready-for-review` notice as before. A merged pull
+request is labelled `unreviewed`. Before promoting, the owner reads those
+(`is:pr is:merged label:unreviewed`) and removes the label. What this
+trades away: unread agent code runs on staging, with staging's secrets and
+database, until the owner reads it.
+
 ## Left for later
+
+- Showing the unreviewed changes in `bif promote` itself, and clearing the
+  label from there.
 
 - Moving `bump-fix.yml` onto `factory-agent.yml`.
 - Step 5: staging smoke test, then merging per class.

@@ -4,8 +4,9 @@ name: Issue Fix
 #
 # When PR Checks fails on one, the factory agent gets the failure log and
 # tries to repair its change: up to MAX_ROUNDS attempts, then the pull request
-# is labelled needs-human and left alone. When PR Checks passes, the owner is
-# told it is ready. Nothing here merges.
+# is labelled needs-human and left alone. When PR Checks passes, the pull
+# request is merged if automatic merging is switched on and it qualifies (see
+# the `ready` job); otherwise the owner is told it is ready.
 #
 # The same split as issue-agent.yml: `propose` runs the agent and can only
 # produce a patch; `push` runs no AI, checks the patch against the default
@@ -227,18 +228,38 @@ jobs:
           fi
           gh api --method POST "repos/$REPO/issues/$PR/comments" -f body="$body" > /dev/null
 
-  # A green pull request from the agent is never left unnoticed, and never
-  # merged from here: every one goes to the owner.
+  # What happens when the agent's pull request goes green. Either the factory
+  # merges it, or it tells the owner it is ready, so one is never left
+  # unnoticed.
+  #
+  # Merging here puts the change on staging and no further: production moves
+  # only when the owner promotes, and that is where these changes get read. A
+  # merged pull request is labelled `unreviewed` so they are easy to find then.
+  #
+  # It merges only when all of these hold, and is off unless the repository
+  # variable FACTORY_AUTOMERGE_ISSUES is "true":
+  #
+  #   - the factory opened the pull request and every commit on it is the
+  #     factory's, so nothing a person pushed is merged unseen by them,
+  #   - it was never handed to a person,
+  #   - neither it nor its issue is labelled `review-first`,
+  #   - Guard has passed on this exact commit.
+  #
+  # The required checks on main still apply to a merge made here; the App
+  # cannot bypass them. The Guard wait below only avoids asking too early.
   ready:
-    name: Say it is ready
+    name: Merge it or say it is ready
     if: >
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'pull_request' &&
       startsWith(github.event.workflow_run.head_branch, 'factory/issue-') &&
       github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions: {}
+    timeout-minutes: 10
+    permissions:
+      checks: read
+      issues: read
+      pull-requests: read
     steps:
       - name: Mint a token for the factory App
         id: app
@@ -247,17 +268,23 @@ jobs:
           app-id: ${{ vars.FACTORY_APP_ID }}
           private-key: ${{ secrets.FACTORY_APP_KEY }}
           permission-pull-requests: write
+          permission-contents: write
 
-      - name: Label the pull request and tell the owner
+      - name: Decide, then merge or notify
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
+          # Reads that the App has no permission for go through this one.
+          READ_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           OWNER: ${{ github.repository_owner }}
           BRANCH: ${{ github.event.workflow_run.head_branch }}
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           CHECKS_RUN: ${{ github.event.workflow_run.html_url }}
+          AUTOMERGE: ${{ vars.FACTORY_AUTOMERGE_ISSUES }}
         run: |
           set -euo pipefail
+          [[ "$BRANCH" =~ ^factory/issue-([1-9][0-9]{0,8})$ ]] || { echo "Not a factory branch."; exit 0; }
+          issue=${BASH_REMATCH[1]}
           pr=$(gh api --method GET "repos/$REPO/pulls" -f state=open -f head="$OWNER:$BRANCH" \
             | jq -c --arg bot "$FACTORY_BOT" '[.[] | select(.user.login == $bot and .user.type == "Bot")][0] // empty')
           if [ -z "$pr" ]; then
@@ -269,14 +296,77 @@ jobs:
             echo "The branch has moved on since this run; a newer run will decide."
             exit 0
           fi
-          if jq -e '[.labels[].name] | index("ready-for-review")' <<<"$pr" > /dev/null; then
+          has_label() { jq -e --arg name "$1" '[.labels[].name] | index($name)' <<<"$pr" > /dev/null; }
+          if has_label ready-for-review; then
             echo "Pull request #$number is already marked ready."
             exit 0
           fi
-          repairs=$(gh api --paginate "repos/$REPO/pulls/$number/commits" \
-            --jq '.[].commit.message | split("\n")[0]' | grep -c -F "$COMMIT_SUBJECT" || true)
-          gh api --method DELETE "repos/$REPO/issues/$number/labels/needs-human" > /dev/null 2>&1 || true
-          gh api --method POST "repos/$REPO/issues/$number/labels" -f "labels[]=ready-for-review" > /dev/null
-          gh api --method POST "repos/$REPO/issues/$number/comments" \
-            -f body="@$OWNER this pull request passes PR Checks and Smoke, after $repairs repair(s) by the agent. It is ready for you to review and merge. Passing run: $CHECKS_RUN" > /dev/null
-          echo "Announced pull request #$number as ready."
+
+          commits=$(gh api --paginate --slurp "repos/$REPO/pulls/$number/commits" | jq 'add')
+          repairs=$(jq -r '.[].commit.message | split("\n")[0]' <<<"$commits" | grep -c -F "$COMMIT_SUBJECT" || true)
+
+          notify() {
+            gh api --method DELETE "repos/$REPO/issues/$number/labels/needs-human" > /dev/null 2>&1 || true
+            gh api --method POST "repos/$REPO/issues/$number/labels" -f "labels[]=ready-for-review" > /dev/null
+            gh api --method POST "repos/$REPO/issues/$number/comments" \
+              -f body="@$OWNER this pull request passes PR Checks and Smoke, after $repairs repair(s) by the agent. $1 It is ready for you to review and merge. Passing run: $CHECKS_RUN" > /dev/null
+            echo "Announced pull request #$number as ready: $1"
+          }
+
+          if [ "$AUTOMERGE" != "true" ]; then
+            notify "Automatic merging of the agent's pull requests is switched off."
+            exit 0
+          fi
+          if has_label needs-human; then
+            notify "It was handed to a person earlier, so it is not merged automatically."
+            exit 0
+          fi
+          if has_label review-first; then
+            notify "It is labelled review-first."
+            exit 0
+          fi
+          # Any doubt about the issue's labels counts as review-first.
+          if ! issue_labels=$(GH_TOKEN="$READ_TOKEN" gh api "repos/$REPO/issues/$issue" --jq '[.labels[].name]'); then
+            notify "Its issue could not be read, so it is not merged automatically."
+            exit 0
+          fi
+          if jq -e 'index("review-first")' <<<"$issue_labels" > /dev/null; then
+            notify "Its issue is labelled review-first."
+            exit 0
+          fi
+          # Who wrote a commit is recorded from its email, which the writer
+          # chooses. That is enough here: the point is that a person who
+          # pushed to this branch sees the result before it merges, and what
+          # limits the change itself is Guard, which judges every file in the
+          # pull request whoever committed it.
+          if ! jq -e --arg bot "$FACTORY_BOT" 'length > 0 and all(.[];
+                .author.login == $bot and .author.type == "Bot"
+                and .committer.login == $bot)' <<<"$commits" > /dev/null; then
+            notify "Someone other than the factory has pushed to it."
+            exit 0
+          fi
+
+          # Guard runs in its own workflow and may still be going. The merge
+          # would be refused without it; waiting gives a clearer outcome.
+          guard=""
+          for _ in $(seq 1 12); do
+            guard=$(GH_TOKEN="$READ_TOKEN" gh api "repos/$REPO/commits/$HEAD_SHA/check-runs" -f check_name=Guard --method GET \
+              --jq '[.check_runs[] | select(.app.slug == "github-actions")] | sort_by(.started_at) | last | (.conclusion // .status // "missing")' || echo "unreadable")
+            case "$guard" in success|failure|cancelled|timed_out|action_required|neutral|skipped) break ;; esac
+            sleep 10
+          done
+          if [ "$guard" != "success" ]; then
+            notify "Guard has not passed on this commit (it is: ${guard:-missing})."
+            exit 0
+          fi
+
+          # `sha` makes the merge fail if the branch moved after these checks.
+          if gh api --method PUT "repos/$REPO/pulls/$number/merge" \
+              -f merge_method=squash -f sha="$HEAD_SHA" > /dev/null; then
+            gh api --method POST "repos/$REPO/issues/$number/labels" -f "labels[]=unreviewed" > /dev/null || true
+            gh api --method POST "repos/$REPO/issues/$number/comments" \
+              -f body="Merged automatically after $repairs repair(s): all checks passed and every commit is the factory's. Nobody has read this change. It is labelled \`unreviewed\` so it can be found before the next promotion to production; remove the label once it has been read. Passing run: $CHECKS_RUN" > /dev/null
+            echo "Merged pull request #$number."
+          else
+            notify "It qualified for automatic merging, but the merge was refused."
+          fi
