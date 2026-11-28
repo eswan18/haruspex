@@ -86,7 +86,8 @@ gh pr list --state merged --label unreviewed
 ### What it needs to run
 
 - The `haruspex-factory` GitHub App, installed on this repository with
-  contents and pull-request write access and nothing else. Its ID is in the
+  contents and pull-request write access and actions read access. It has no
+  access to workflows or issues. Its ID is in the
   variable `FACTORY_APP_ID` and its private key in the secret
   `FACTORY_APP_KEY`.
 - The secret `CLAUDE_CODE_OAUTH_TOKEN`, made with `claude setup-token`. It
