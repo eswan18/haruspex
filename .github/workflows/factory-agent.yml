@@ -243,9 +243,13 @@ jobs:
             read.
           PROMPT_TESTS_YES: |
             You may add new test files beside the code they cover, named
-            `*.test.ts` or `*.test.tsx`. Whether to is your call: add one
-            when the change has behaviour worth pinning, such as a bug fix
-            or a new rule, and not for the sake of it. Tests that existed
+            `*.test.ts` or `*.test.tsx`. A bug fix comes with a test: one
+            that fails without your fix and passes with it, aimed at the
+            code you changed and not only at helpers it calls. If no such
+            test can be written inside these limits, say why in your
+            account. For any other change it is your call: add a test when
+            there is behaviour worth pinning, such as a new rule, and not
+            for the sake of it. Tests that existed
             before this branch, and all fixtures, mocks and shared test
             helpers, may not be edited, renamed or deleted, so a new test
             goes in a new file.
