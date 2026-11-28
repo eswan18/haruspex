@@ -1,7 +1,8 @@
 name: Issue Agent
 
 # The owner labels an issue `factory`; the factory agent writes the change and
-# opens a pull request for the owner to review. Nothing here merges.
+# opens a pull request. Nothing here merges; what happens once its checks
+# pass is decided in issue-fix.yml.
 #
 # It starts only when the owner applied the label, to an open issue the owner
 # wrote. The repository is public, so anyone can file an issue or comment on
@@ -199,6 +200,7 @@ jobs:
           AGENT_OK: ${{ needs.propose.outputs.agent_ok }}
           PUSH: ${{ needs.push.result }}
           PR: ${{ needs.push.outputs.pr_number }}
+          AUTOMERGE: ${{ vars.FACTORY_AUTOMERGE_ISSUES }}
           NOTE: ${{ needs.propose.outputs.note }}
           THIS_RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
@@ -206,7 +208,12 @@ jobs:
           comment() { gh api --method POST "repos/$REPO/issues/$ISSUE/comments" -f body="$1" > /dev/null; }
 
           if [ "$PUSH" = "success" ] && [ -n "$PR" ]; then
-            comment "The factory agent opened #$PR for this. It is yours to review and merge; if its checks fail, the agent gets up to three tries at repairing it and will say so on the pull request."
+            if [ "$AUTOMERGE" = "true" ]; then
+              after="If its checks pass it will be merged automatically and labelled \`unreviewed\`, unless this issue or the pull request is labelled \`review-first\`."
+            else
+              after="If its checks pass it waits for you to review and merge."
+            fi
+            comment "The factory agent opened #$PR for this. $after If its checks fail, the agent gets up to three tries at repairing it and will say so on the pull request."
             exit 0
           fi
 
