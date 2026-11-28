@@ -3,7 +3,7 @@
 // https://docs.sentry.io/platforms/javascript/guides/nextjs/
 
 import * as Sentry from "@sentry/nextjs";
-import { parseSampleRate } from "./lib/sentry-utils";
+import { parseSampleRate, sentryEnvironment } from "./lib/sentry-utils";
 
 const defaultTraceRate = process.env.NODE_ENV === "production" ? 0.2 : 1;
 
@@ -12,6 +12,9 @@ Sentry.init({
   // NEXT_PUBLIC_* is inlined into browser code, at build time (see Dockerfile).
   // Unset in local dev, which leaves the browser client off there.
   dsn: process.env.NEXT_PUBLIC_SENTRY_DSN || undefined,
+  // From the page's own address: one build serves every environment, so
+  // nothing about which one this is can be inlined.
+  environment: sentryEnvironment(window.location.hostname),
 
   // Add optional integrations for additional features
   integrations: [Sentry.replayIntegration()],
