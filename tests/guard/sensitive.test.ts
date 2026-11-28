@@ -63,12 +63,35 @@ describe("reviewReasons: listed paths", () => {
 });
 
 describe("reviewReasons: endpoints", () => {
-  it.each(["app/api/health/route.ts", "app/route.ts", "app/x/[id]/route.tsx"])(
-    "%s waits as a public endpoint",
-    (path) => {
-      expect(reviewReasons([changed(path)])).toEqual([`${path}: a public endpoint`]);
-    },
-  );
+  it.each([
+    "app/api/health/route.ts",
+    "app/route.ts",
+    "app/x/[id]/route.tsx",
+    "app/account/page.tsx",
+    "app/competitions/layout.tsx",
+    "app/competitions/[competitionId]/standings/standings-table.tsx",
+    "app/not-found.tsx",
+    "app/error.tsx",
+    "app/sitemap.ts",
+    "app/robots.ts",
+    "app/opengraph-image.tsx",
+    "app/some/new/template.tsx",
+    "app/some/default.tsx",
+  ])("%s waits, being in the routing tree", (path) => {
+    expect(reviewReasons([changed(path)])).toEqual([
+      `${path}: a page, layout or endpoint`,
+    ]);
+  });
+
+  it("lets a stylesheet in the routing tree through", () => {
+    expect(reviewReasons([changed("app/globals.css")])).toEqual([]);
+  });
+
+  it("looks at where a file was moved from", () => {
+    expect(
+      waits(changed("components/moved.tsx", { previousPath: "app/x/page.tsx" })),
+    ).toBe(true);
+  });
 
   it("treats a server action as an endpoint", () => {
     expect(
@@ -119,6 +142,14 @@ describe("reviewReasons: what the file says", () => {
     "const m = await import(pathFromSomewhere);",
     'const n = await import("@/lib/" + name);',
     "const req = require(name);",
+    'const m = await import("@/lib/\\x61uth");',
+    'const m2 = await import("@/lib/\\u0061uth");',
+    'const r = createRequire(import.meta.url);',
+    "const r2 = module.require('x');",
+    "const r3 = module['require']('x');",
+    "const f = new Function('return 1');",
+    "const g = globalThis['ev' + 'al'];",
+    "const u = import.meta.url;",
     "const q = sql<number>`select 1`;",
     "const r = sql.raw(text);",
     'import { Kysely } from "kysely/helpers/postgres";',
@@ -154,6 +185,9 @@ describe("reviewReasons: what the file says", () => {
     'const label = "authors/of/the/week";',
     'import { cn } from "@/lib/utils";',
     'const href = "/competitions/" + id;',
+    "const C: React.FunctionComponent = () => null;",
+    "const modules = ['a', 'b'];",
+    'const label = "Line one\\nLine two";',
   ])("does not wait for ordinary text: %s", (line) => {
     expect(authorizationIn(line)).toBeNull();
   });
@@ -169,7 +203,6 @@ describe("reviewReasons: ordinary changes", () => {
     "app/globals.css",
     "lib/authors.ts",
     "lib/proxy-ish.ts",
-    "app/oauthish/page.tsx",
   ])("%s does not wait", (path) => {
     expect(reviewReasons([changed(path)])).toEqual([]);
   });
@@ -184,7 +217,7 @@ describe("reviewReasons: ordinary changes", () => {
       ]),
     ).toEqual([
       "proxy.ts: sign-in, session, token or access code",
-      "app/api/x/route.ts: a public endpoint",
+      "app/api/x/route.ts: a page, layout or endpoint",
       "lib/b.ts: row-level security",
     ]);
   });

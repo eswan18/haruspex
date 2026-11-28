@@ -10,13 +10,23 @@
  *
  *   1. The path is on the list below: the code whose whole job is sign-in,
  *      sessions, tokens or row-level security.
- *   2. The file is an endpoint: a route handler or a server action, which
- *      anyone can call and which must do its own checking.
+ *   2. The file is reachable from outside: anything under app/, where every
+ *      file is a page, a layout, a route handler or something they render on
+ *      the server, and any server action wherever it lives. This one is a
+ *      rule about where a file is, not what it looks like, because Next has
+ *      many file names that serve requests and will grow more.
  *   3. The file's text makes an authorization decision, judged by the names
  *      such code uses here. Authorization is spread over some fifty files, so
  *      no list of paths could keep up. The text is read both before and
  *      after the change, because the dangerous edit is the one that removes
  *      the check.
+ *
+ * What this is not: a wall. The third test reads text for familiar names, and
+ * code written to avoid those names on purpose could get past it. The walls
+ * are elsewhere: the guard's limits on what the agent may touch at all, the
+ * checks, and production moving only when the owner promotes. This decides
+ * which changes the owner reads before they reach staging, and errs toward
+ * reading.
  *
  * Pure functions; merge-review.ts fetches the files and calls them. Extend
  * the list and the markers when the codebase grows a new way to say "is this
@@ -70,9 +80,12 @@ function onList(path: string): boolean {
   });
 }
 
-/** Route handlers: public HTTP endpoints, whatever they are for. */
-function isRouteHandler(path: string): boolean {
-  return /^app\/(.*\/)?route\.[^/]+$/.test(path);
+/**
+ * Everything in the routing tree. Stylesheets are let through: they hold no
+ * logic and are most of what a visual change touches there.
+ */
+function isRouted(path: string): boolean {
+  return path.startsWith("app/") && !path.endsWith(".css");
 }
 
 /**
@@ -118,9 +131,12 @@ const AUTH_MARKERS: [RegExp, string][] = [
   // syntax: `from`, `import()`, `require()`, a bare `import "x"` and whatever
   // comes next all have to spell the path somewhere.
   [ACCESS_MODULE_IN_A_STRING, "names an access-control module"],
-  // An import whose target is not a plain string cannot be read at all.
+  // An import whose target is not a plain string cannot be read at all, and
+  // nor can a string that spells its contents with escapes. Ordinary
+  // application code here needs none of these, so their mere presence is
+  // enough to want a reader.
   [
-    /\bimport\s*\(\s*(?!["'][^"'`$\n]*["']\s*\))|\brequire\s*\(|\bimport\.meta\.glob\b|\beval\s*\(|\bnew\s+Function\s*\(/,
+    /\bimport\s*\(\s*(?!["'][^"'`$\\\n]*["']\s*\))|\bimport\.meta\b|\b(?:require|createRequire|eval|Function|globalThis|Reflect|Proxy)\b|\bmodule\s*[.[]|\\(?:x[0-9a-fA-F]|u[0-9a-fA-F{])/,
     "loads code in a way that cannot be checked",
   ],
   // A query written here is one that row-level security has to be right for.
@@ -167,9 +183,9 @@ export function reviewReasons(files: ChangedSource[]): string[] {
       reasons.push(`${listed}: sign-in, session, token or access code`);
       continue;
     }
-    const route = paths.find(isRouteHandler);
-    if (route !== undefined) {
-      reasons.push(`${route}: a public endpoint`);
+    const routed = paths.find(isRouted);
+    if (routed !== undefined) {
+      reasons.push(`${routed}: a page, layout or endpoint`);
       continue;
     }
     const meaning =

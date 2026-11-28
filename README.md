@@ -38,8 +38,8 @@ issue. Production is never touched by any of it. Review happens at promotion.
 
 Add `review-first` to the issue to make its pull request wait for a person.
 Some pull requests always wait, whatever their labels: those that touch
-sign-in, session or access code, an endpoint (a route handler or server
-action), or any file that makes an authorization decision. In practice that
+sign-in, session or access code, anything under `app/` except stylesheets,
+a server action, or any file that makes an authorization decision. That
 leaves components, pure logic, hooks, types and styles to merge on their own.
 The rule is `.github/guard/sensitive.ts`.
 
