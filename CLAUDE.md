@@ -244,6 +244,20 @@ a parent (the options editor inside a `Field`, a row inside its table's grid)
 needs that parent in its decorator or the story shows it unstyled. Verify with
 `npm run build-storybook`.
 
+### Software factory
+
+Dependency updates and issues labelled `factory` are turned into pull requests
+by automation, and merged to `main` (so to staging) without a person; see "The
+software factory" in the README. Two consequences for anyone editing here:
+
+- **Bot pull requests are held to an allowlist** in `.github/guard/policy.ts`,
+  enforced by the required `Guard` check. A pull request a bot opened, or that
+  carries a bot's commit, cannot change tests, migrations, dependencies, config
+  or `.github/`. To make such a change, open a pull request of your own.
+- **Existing tests are how the owner pins behaviour** against the agent. A test
+  that looks odd, especially one named "SURPRISE", may be pinning a known quirk
+  on purpose; change it deliberately, with the fix it guards.
+
 ### Error Monitoring
 
 - Sentry integration for error tracking and performance monitoring

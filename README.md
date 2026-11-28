@@ -1,4 +1,4 @@
-# Forecasting App
+# Haruspex
 
 This is a web application for predicting the likelihood that certain events will happen in the coming year.
 Check it out at [haruspex.fyi](https://haruspex.fyi).
@@ -11,7 +11,101 @@ A NextJS app and database migrations, basically.
 
 ## How is it deployed?
 
-In Vercel, with minimal customization.
+A push to `main` builds one image in Google Cloud Build. ArgoCD's image
+updater deploys it to staging on its own, and migrations run as part of that
+deploy. Production moves only when the owner promotes it with `bif promote
+haruspex`. Staging is at `staging.haruspex.fyi`, reachable only on the tailnet.
+
+## The software factory
+
+Two kinds of change reach `main`, and so staging, with nobody in the loop:
+dependency updates, and small tasks handed to an AI agent by labelling an
+issue. Production is never touched by any of it. Review happens at promotion.
+
+### Handing a task to the agent
+
+1. File an issue with the **Factory task** form. Say what should change and
+   how to tell it is done. The agent reads the issue and any comments the
+   repository owner adds, and nobody else's.
+2. Add the `factory` label. Only the owner's label counts, and only on an
+   issue the owner wrote.
+3. The agent writes the change and `haruspex-factory` opens a pull request.
+   If the task is unclear, too big, or contradicts an existing test, it
+   changes nothing and says why on the issue, which gets `needs-human`.
+4. If the checks fail, the agent gets up to three tries at a repair, then the
+   pull request gets `needs-human`.
+5. If the checks pass, the factory merges it and labels it `unreviewed`.
+
+Add `review-first` to the issue to make its pull request wait for a person.
+
+### What the agent can and cannot change
+
+It can edit `.ts`, `.tsx` and `.css` files under `app/`, `components/`,
+`lib/`, `hooks/` and `types/`, and `proxy.ts`: at most 25 files and 400 lines
+per pull request. It can add new test files beside the code.
+
+It cannot change existing tests, fixtures or mocks, migrations, dependencies,
+configuration, documentation, or anything under `.github/`. It cannot run
+code: it reads and edits files, and CI is the first time its change executes.
+
+These are rules in code, not instructions to the agent. They live in
+`.github/guard/policy.ts`, are applied before anything the agent writes is
+committed, and are applied again by the required `Guard` check on the pull
+request. `Guard` holds any pull request opened by a bot, or carrying a bot's
+commit, to these rules; a person's own pull request is not restricted.
+
+### Dependency updates
+
+Dependabot opens one grouped pull request a week for minor and patch
+updates, and only for versions at least seven days old. If it passes the
+checks untouched and every direct dependency moved by a minor or patch
+version, the factory merges it. Majors, and anything that needed fixing, wait
+for a person. When an update breaks the build, the agent gets up to three
+tries at fixing the call sites; it may not touch tests or the manifests.
+
+### Before promoting to production
+
+Read what merged without a reader, then remove the label from each:
+
+```bash
+gh pr list --state merged --label unreviewed
+```
+
+### Switches and labels
+
+| Name | What it does |
+|---|---|
+| `FACTORY_AUTOMERGE_ISSUES` (repository variable) | `true` lets the factory merge the agent's green pull requests. Otherwise it only announces them. |
+| `FACTORY_AUTOMERGE_BUMPS` (repository variable) | The same, for dependency updates. |
+| `factory` | On an issue, by the owner: start the agent. |
+| `review-first` | On an issue or pull request: never merge it automatically. |
+| `needs-human` | The agent stopped. Removing it from a pull request lets the agent try again. |
+| `ready-for-review` | Green, and waiting for a person to merge. |
+| `unreviewed` | Merged by the factory; nobody has read it yet. |
+
+### What it needs to run
+
+- The `haruspex-factory` GitHub App, installed on this repository with
+  contents and pull-request write access and nothing else. Its ID is in the
+  variable `FACTORY_APP_ID` and its private key in the secret
+  `FACTORY_APP_KEY`.
+- The secret `CLAUDE_CODE_OAUTH_TOKEN`, made with `claude setup-token`. It
+  lasts a year; when it lapses the agent step fails with a 401.
+- The `main` ruleset requiring `Guard`, `PR Checks` and `Smoke`.
+
+### Where it lives
+
+| File | Role |
+|---|---|
+| `.github/workflows/issue-agent.yml` | A labelled issue becomes a pull request. |
+| `.github/workflows/issue-fix.yml` | Repairs, and the merge-or-announce decision. |
+| `.github/workflows/factory-agent.yml` | The confined agent run both of those call. |
+| `.github/workflows/bump-fix.yml` | The same loop for dependency updates. |
+| `.github/workflows/guard.yml`, `.github/guard/` | The rules, and the check that applies them. |
+| `.github/dependabot.yml` | What Dependabot proposes, and when. |
+
+The reasoning behind the design is in
+`docs/superpowers/specs/2026-11-27-factory-issue-agent-design.md`.
 
 ## MCP server
 
