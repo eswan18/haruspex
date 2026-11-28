@@ -3,13 +3,14 @@
 // https://docs.sentry.io/platforms/javascript/guides/nextjs/
 
 import * as Sentry from "@sentry/nextjs";
-import { parseSampleRate } from "./lib/sentry-utils";
+import { parseSampleRate, sentryEnvironment } from "./lib/sentry-utils";
 
 const defaultTraceRate = process.env.NODE_ENV === "production" ? 0.2 : 1;
 
 if (process.env.SENTRY_ENABLED !== "false") {
   Sentry.init({
     dsn: process.env.SENTRY_DSN || undefined,
+    environment: sentryEnvironment(process.env.APP_BASE_URL),
 
     tracesSampleRate: parseSampleRate(
       process.env.SENTRY_TRACES_SAMPLE_RATE,
