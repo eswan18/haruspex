@@ -947,7 +947,7 @@ describe("competition actions against the database", () => {
     );
 
     ifRunningContainerTestsIt(
-      "SURPRISE: a site admin updating a competition that does not exist (no date fields) gets success",
+      "a site admin updating a competition that does not exist (no date fields) is told it was not found",
       async () => {
         const admin = await factory.createUser({ is_admin: true });
         vi.mocked(getUserFromCookies).mockResolvedValue(admin as never);
@@ -957,7 +957,11 @@ describe("competition actions against the database", () => {
           competition: { name: "Ghost" },
         });
 
-        expect(result).toEqual({ success: true, data: undefined });
+        expect(result).toEqual({
+          success: false,
+          error: "Competition not found",
+          code: "NOT_FOUND",
+        });
       },
     );
 
@@ -1131,14 +1135,18 @@ describe("competition actions against the database", () => {
     );
 
     ifRunningContainerTestsIt(
-      "SURPRISE: a site admin deleting a competition that does not exist gets success",
+      "a site admin deleting a competition that does not exist is told it was not found",
       async () => {
         const admin = await factory.createUser({ is_admin: true });
         vi.mocked(getUserFromCookies).mockResolvedValue(admin as never);
 
         const result = await actions.deleteCompetition({ id: 2147483000 });
 
-        expect(result).toEqual({ success: true, data: undefined });
+        expect(result).toEqual({
+          success: false,
+          error: "Competition not found",
+          code: "NOT_FOUND",
+        });
       },
     );
   });
