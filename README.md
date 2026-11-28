@@ -396,9 +396,10 @@ byte-for-byte, so a migration added without regenerating fails CI. The manifest 
 #### Applying migrations from inside the image
 
 The check above refuses to start an app whose database is behind. Something has to be able to move that
-database forward, and in a bifrost preview environment that something cannot be a laptop: a preview cuts
-its own Neon branch and then runs an **initContainer** to bring the schema up to date before the app
-container starts.
+database forward, and in a deployed environment that something cannot be a laptop: every staging, prod
+and bifrost preview pod runs an **initContainer** that brings the schema up to date before the app
+container starts. (A preview cuts its own Neon branch from staging first, so it is the one that most
+often has a migration to apply.)
 
 `npm exec kysely migrate up` cannot do that job. The Dockerfile's runner stage carries neither
 `kysely-ctl` nor `tsx`, so nothing in the image can load a `.ts` migration. So the migrations are
@@ -417,9 +418,12 @@ container starts.
 ["node", "/app/migrate/index.js"]
 ```
 
-It reads `DATABASE_URL` from the environment — the same one the app container gets — and drives kysely's
-own `Migrator`. It applies migrations and does nothing else: no schema inspection, no repair, no
-"this database looks new so…". Every decision about what to apply is kysely's.
+It reads `DATABASE_URL` from the environment and drives kysely's own `Migrator`. That is **not** the app
+container's `DATABASE_URL`: the initContainer is given the database owner's connection string on Neon's
+direct host, because the app's role cannot change the schema and the runner refuses Neon's pooled
+`-pooler` host (see "Staging and prod" below; in a preview, bifrost supplies it). It applies migrations
+and does nothing else: no schema inspection, no repair, no "this database looks new so…". Every
+decision about what to apply is kysely's.
 
 **Exit codes are the whole contract**, because an initContainer that exits 0 without migrating would let
 a broken app start:
@@ -427,9 +431,9 @@ a broken app start:
 - `0` — every migration applied (or already applied) *and* the database then passes the startup check
   above. The runner re-uses `verifyMigrations` as a post-condition, so "the runner succeeded" and "the
   app will boot" cannot come apart.
-- `1` — `DATABASE_URL` unset, database unreachable, a migration failed, the database is ahead of the
-  build (kysely refuses a migration table holding names it doesn't know), or the compiled set is not
-  the manifest.
+- `1` — `DATABASE_URL` unset or on Neon's pooled host, database unreachable, a migration failed or
+  waited too long for a lock, the database is ahead of the build (kysely refuses a migration table
+  holding names it doesn't know), or the compiled set is not the manifest.
 
 ##### Staging and prod
 
