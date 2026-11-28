@@ -111,7 +111,13 @@ function redirectToLogin(request: NextRequest, pathname: string) {
   const loginUrl = new URL("/login", baseUrl);
   // Preserve the original URL for redirect after login (except for home page)
   if (pathname !== "/") {
-    loginUrl.searchParams.set("redirect", encodeURIComponent(pathname));
+    // Keep the query string too, or a deep link lands without its parameters.
+    // The target is re-validated as a same-site path by safeReturnPath in
+    // /oauth/login and /oauth/callback before it is used.
+    loginUrl.searchParams.set(
+      "redirect",
+      encodeURIComponent(`${pathname}${request.nextUrl.search}`),
+    );
   }
   return NextResponse.redirect(loginUrl);
 }
