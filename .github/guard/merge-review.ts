@@ -3,7 +3,10 @@
  * (sensitive.ts). Reads the pull request through the GitHub API as data;
  * nothing from it is checked out or run.
  *
- * Env: GITHUB_TOKEN, GUARD_REPO, GUARD_PR_NUMBER.
+ * Env: GITHUB_TOKEN, GUARD_REPO, GUARD_PR_NUMBER, and GUARD_HEAD_SHA: the
+ * commit the caller is about to merge. If the pull request has moved on from
+ * it, what would be read here is not what would be merged, and the answer is
+ * "could not tell".
  * Prints a JSON array of reasons. Exit 0: none, it may merge. Exit 1: some.
  * Exit 2: could not tell, which the caller must treat as "some".
  */
@@ -16,6 +19,7 @@ const MAX_PAGES = 30;
 const token = process.env.GITHUB_TOKEN ?? "";
 const repo = process.env.GUARD_REPO ?? "";
 const prNumber = process.env.GUARD_PR_NUMBER ?? "";
+const headSha = process.env.GUARD_HEAD_SHA ?? "";
 
 async function github(path: string, accept: string): Promise<Response> {
   return fetch(`${API}${path}`, {
@@ -64,7 +68,12 @@ async function main(): Promise<number> {
   if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) throw new Error("GUARD_REPO is malformed");
   if (!/^[1-9]\d*$/.test(prNumber)) throw new Error("GUARD_PR_NUMBER is malformed");
 
+  if (!/^[0-9a-f]{40}$/.test(headSha)) throw new Error("GUARD_HEAD_SHA is malformed");
+
   const pr = await getJson<PullRequest>(`/repos/${repo}/pulls/${prNumber}`);
+  if (pr.head.sha !== headSha) {
+    throw new Error("the pull request has moved on from the commit being merged");
+  }
   const listed: PullRequestFile[] = [];
   for (let page = 1; page <= MAX_PAGES; page++) {
     const batch = await getJson<PullRequestFile[]>(
@@ -76,6 +85,12 @@ async function main(): Promise<number> {
   if (listed.length !== pr.changed_files) {
     throw new Error("the list of changed files may not be complete");
   }
+  // The list was fetched after the pull request itself. Look again, so a
+  // push in between cannot leave it describing a different commit.
+  const after = await getJson<PullRequest>(`/repos/${repo}/pulls/${prNumber}`);
+  if (after.head.sha !== headSha) {
+    throw new Error("the pull request moved while it was being read");
+  }
 
   const files: ChangedSource[] = [];
   for (const file of listed) {
@@ -84,7 +99,7 @@ async function main(): Promise<number> {
       previousPath: file.previous_filename,
       // A renamed file's earlier text is under its earlier name.
       base: await textAt(pr.base.sha, file.previous_filename ?? file.filename),
-      head: await textAt(pr.head.sha, file.filename),
+      head: await textAt(headSha, file.filename),
     });
   }
 

@@ -369,7 +369,7 @@ jobs:
           # endpoints, and any file that makes an authorization decision
           # (.github/guard/sensitive.ts). Failing to find out counts as one.
           set +e
-          reasons=$(GITHUB_TOKEN="$READ_TOKEN" GUARD_REPO="$REPO" GUARD_PR_NUMBER="$number" \
+          reasons=$(GITHUB_TOKEN="$READ_TOKEN" GUARD_REPO="$REPO" GUARD_PR_NUMBER="$number" GUARD_HEAD_SHA="$HEAD_SHA" \
             node rules/.github/guard/merge-review.ts)
           verdict=$?
           set -e
