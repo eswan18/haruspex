@@ -212,11 +212,15 @@ export async function updateCompetition({
         }
       }
 
-      await trx
+      const updated = await trx
         .updateTable("competitions")
         .set(competition)
         .where("id", "=", id)
-        .execute();
+        .executeTakeFirst();
+      // No row matched: say so, or the caller takes a no-op for a change.
+      if (updated.numUpdatedRows === BigInt(0)) {
+        return error("Competition not found", ERROR_CODES.NOT_FOUND);
+      }
 
       return success(undefined);
     });
@@ -389,9 +393,21 @@ export async function deleteCompetition({
       );
     }
 
-    await withRLS(currentUser.id, async (trx) => {
-      await trx.deleteFrom("competitions").where("id", "=", id).execute();
+    const deleted = await withRLS(currentUser.id, async (trx) => {
+      const result = await trx
+        .deleteFrom("competitions")
+        .where("id", "=", id)
+        .executeTakeFirst();
+      return result.numDeletedRows;
     });
+    // No row matched: say so, or the caller takes a no-op for a deletion.
+    if (deleted === BigInt(0)) {
+      logger.warn("Tried to delete a competition that does not exist", {
+        competitionId: id,
+        currentUserId: currentUser.id,
+      });
+      return error("Competition not found", ERROR_CODES.NOT_FOUND);
+    }
 
     const duration = Date.now() - startTime;
     logger.info("Competition deleted successfully", {
